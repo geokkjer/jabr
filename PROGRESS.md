@@ -24,8 +24,12 @@
 - `postgrest.conf` omitted — compose env vars cover all settings
 
 ## Phase 4: Calibre Import/Conversion Script
-- [ ] 4.1 Migration script structure
+- [x] 4.1 Migration script structure (scripts/migrate-calibre.ts)
 - [ ] 4.2 Test migration against local DB
+
+### Deviations from plan
+- Added `tsx` as dev dependency for running TypeScript scripts
+- Added `migrate` script to package.json (`pnpm migrate`)
 
 ## Phase 5: Frontend - API Layer
 - [ ] 5.1 PostgREST client (thin fetch wrapper)

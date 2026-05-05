@@ -13,7 +13,8 @@
     "lint": "run-s lint:*",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
-    "format": "oxfmt src/"
+    "format": "oxfmt src/",
+    "migrate": "tsx scripts/migrate-calibre.ts"
   },
   "dependencies": {
     "epubjs": "^0.3.93",
@@ -46,6 +47,7 @@
     "oxlint": "~1.60.0",
     "pg": "^8.20.0",
     "tailwindcss": "^4.2.4",
+    "tsx": "^4.21.0",
     "typescript": "~6.0.0",
     "vite": "^8.0.8",
     "vite-plugin-vue-devtools": "^8.1.1",
