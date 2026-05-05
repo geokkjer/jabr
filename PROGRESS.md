@@ -14,9 +14,14 @@
 - [x] 2.3 Default seed data (db/seed.sql)
 
 ## Phase 3: Container Stack
-- [ ] 3.1 Podman Compose (postgres + postgrest)
-- [ ] 3.2 PostgREST config override
+- [x] 3.1 Podman Compose (postgres + postgrest)
+- [x] 3.2 PostgREST config — skipped, env vars in compose suffice
 - [ ] 3.3 Verify stack runs and test binary streaming RPC
+
+### Deviations from plan
+- `db/seed.sql` mounted as `02-seed.sql` in initdb.d so default profile
+  is created automatically on first start (plan had seed run manually)
+- `postgrest.conf` omitted — compose env vars cover all settings
 
 ## Phase 4: Calibre Import/Conversion Script
 - [ ] 4.1 Migration script structure
