@@ -32,10 +32,16 @@
 - Added `migrate` script to package.json (`pnpm migrate`)
 
 ## Phase 5: Frontend - API Layer
-- [ ] 5.1 PostgREST client (thin fetch wrapper)
-- [ ] 5.2 Books API
-- [ ] 5.3 Progress API
-- [ ] 5.4 Profiles API
+- [x] 5.1 PostgREST client (thin fetch wrapper)
+- [x] 5.2 Books API
+- [x] 5.3 Progress API
+- [x] 5.4 Profiles API
+
+### Deviations from plan
+- Added `upsert` method to PostgREST client using `Prefer: resolution=merge-duplicates`
+  for true insert-or-update (plan used PATCH which assumes row exists)
+- Progress API now uses `upsert` instead of `patch` for saving progress
+- Created `src/types/index.ts` with `Book`, `BookProgress`, `Profile` interfaces
 
 ## Phase 6: Frontend - Pinia Stores
 - [ ] 6.1 Books store
