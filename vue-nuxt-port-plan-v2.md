@@ -998,17 +998,19 @@ export const useProgressStore = defineStore('progress', {
 
 ## Phase 7: Frontend - Components
 
+> **Note**: Client-side filtering/sorting means SearchBar and SortControls don't trigger server calls. BookReader handles EPUB/PDF/TEXT rendering with progress restoration.
+
 ### 7.1 Component Inventory
 
 We build only what we need (KISS + YAGNI):
 
 | Component | Props | Purpose |
 |-----------|-------|---------|
-| `BookCard.vue` | `book: Book`, `progress?: { percent: number }` | Grid card for book in library |
-| `SearchBar.vue` | `modelValue: string` | Search input with debounce |
+| `BookCard.vue` | `book: Book`, `progress?: number` | Grid card for book in library |
+| `SearchBar.vue` | `modelValue: string` | Search input (no debounce — client-side) |
 | `SortControls.vue` | `sort: string`, `order: 'asc' \| 'desc'` | Sort dropdown + direction toggle |
 | `CurrentlyReading.vue` | `book: Book`, `progress: number` | Active book widget |
-| `BookReader.vue` | `bookId: string`, `format: string` | EPUB / PDF / TEXT reader |
+| `BookReader.vue` | `bookId: string`, `format: string`, `contentUrl: string`, `initialLocation?`, `initialPercent?` | EPUB / PDF / TEXT reader |
 
 ### 7.2 BookCard.vue
 
@@ -1019,7 +1021,7 @@ import type { Book } from '@/types'
 
 interface Props {
   book: Book
-  progress?: { percent: number } | null
+  progress?: number | null
 }
 
 const props = defineProps<Props>()
@@ -1058,7 +1060,7 @@ function formatSize(bytes: number): string {
         class="font-bold text-ocher hover:text-ocher/80 transition-colors"
         @click.stop="emit('read', book)"
       >
-        Resume {{ Math.round(progress.percent) }}%
+        Resume {{ Math.round(progress) }}%
       </button>
       <button
         v-else
@@ -1075,7 +1077,7 @@ function formatSize(bytes: number): string {
     >
       <div
         class="h-full rounded-full bg-ocher transition-all duration-300"
-        :style="{ width: `${progress.percent}%` }"
+        :style="{ width: `${progress}%` }"
       />
     </div>
   </div>
@@ -1084,32 +1086,25 @@ function formatSize(bytes: number): string {
 
 ### 7.3 SearchBar.vue
 
+No debounce — client-side filtering is instant, no server calls to throttle. Uses `v-model` directly.
+
 ```vue
 <!-- src/components/SearchBar.vue -->
 <script setup lang="ts">
 const modelValue = defineModel<string>({ default: '' })
-const emit = defineEmits<{ search: [value: string] }>()
-
-let timeout: ReturnType<typeof setTimeout>
-function onInput(value: string) {
-  clearTimeout(timeout)
-  timeout = setTimeout(() => emit('search', value), 300)
-}
 
 function clear() {
   modelValue.value = ''
-  emit('search', '')
 }
 </script>
 
 <template>
   <div class="relative">
     <input
-      :value="modelValue"
+      v-model="modelValue"
       type="text"
       placeholder="Search books..."
       class="w-full pl-10 pr-4 py-2 rounded-xl border-2 border-coffee/10 bg-card text-coffee placeholder-sage/60 focus:border-ocher focus:outline-none transition-colors"
-      @input="onInput(($event.target as HTMLInputElement).value)"
     />
     <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-sage" fill="none" stroke="currentColor" viewBox="0 0 24 24">
       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -1219,38 +1214,35 @@ const emit = defineEmits<{ continue: []; stop: [] }>()
 
 ### 7.6 BookReader.vue
 
-The reader component encapsulates the EPUB.js and pdfjs-dist rendering logic. It receives book content as a Blob URL and manages reading progress.
+The reader component encapsulates EPUB.js and pdfjs-dist rendering logic. It receives book content as a Blob URL and manages reading progress with position restoration.
 
 ```vue
 <!-- src/components/BookReader.vue -->
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import ePub from 'epubjs'
 import * as pdfjsLib from 'pdfjs-dist'
 
 const props = defineProps<{
   bookId: string
   format: string
-  contentUrl: string  // Blob URL from fetched content
+  contentUrl: string
+  initialLocation?: Record<string, unknown> | null
+  initialPercent?: number | null
 }>()
 
 const emit = defineEmits<{
   progress: [location: Record<string, unknown>, percent: number]
 }>()
 
+const loading = ref(true)
+const error = ref<string | null>(null)
 const container = ref<HTMLDivElement | null>(null)
 const pdfContainer = ref<HTMLDivElement | null>(null)
 
-// EPUB state
-let rendition: ReturnType<typeof ePub> | null = null
-
-// PDF state
+let rendition: any = null
 let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
-const currentPage = ref(1)
-const totalPages = ref(0)
-const containerWidth = ref(0)
-
-// Progress saving
+let currentPage = 1
 let saveTimer: ReturnType<typeof setTimeout>
 
 function scheduleSave(location: Record<string, unknown>, percent: number) {
@@ -1258,7 +1250,6 @@ function scheduleSave(location: Record<string, unknown>, percent: number) {
   saveTimer = setTimeout(() => emit('progress', location, percent), 750)
 }
 
-// ── EPUB Reader ──
 async function initEpub() {
   if (!container.value) return
   const book = ePub(props.contentUrl)
@@ -1267,7 +1258,9 @@ async function initEpub() {
     height: '100%',
     flow: 'scrolled-doc',
   })
-  await rendition.display()
+
+  const cfi = props.initialLocation?.cfi as string | undefined
+  await (cfi ? rendition.display(cfi) : rendition.display())
 
   rendition.on('relocated', (loc: { start?: { cfi?: string }; percentage?: number }) => {
     const cfi = loc.start?.cfi
@@ -1277,7 +1270,6 @@ async function initEpub() {
   })
 }
 
-// ── PDF Reader ──
 async function initPdf() {
   if (!pdfContainer.value) return
   pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -1286,9 +1278,25 @@ async function initPdf() {
 
   const loadingTask = pdfjsLib.getDocument(props.contentUrl)
   pdfDoc = await loadingTask.promise
-  totalPages.value = pdfDoc.numPages
 
-  // Scroll-based page tracking
+  for (let i = 1; i <= pdfDoc.numPages; i++) {
+    const page = await pdfDoc.getPage(i)
+    const viewport = page.getViewport({ scale: 1.5 })
+    const canvas = document.createElement('canvas')
+    canvas.setAttribute('data-page', String(i))
+    canvas.width = viewport.width
+    canvas.height = viewport.height
+    canvas.className = 'mb-4 shadow-lg'
+    await page.render({ canvas, viewport }).promise
+    pdfContainer.value.appendChild(canvas)
+  }
+
+  const savedPage = props.initialLocation?.page as number | undefined
+  if (savedPage && savedPage <= pdfDoc.numPages) {
+    const el = pdfContainer.value.querySelector(`[data-page="${savedPage}"]`) as HTMLElement | null
+    el?.scrollIntoView({ block: 'start' })
+  }
+
   pdfContainer.value.addEventListener('scroll', () => {
     if (!pdfContainer.value || !pdfDoc) return
     const els = pdfContainer.value.querySelectorAll('[data-page]')
@@ -1297,18 +1305,28 @@ async function initPdf() {
     els.forEach((el) => {
       const rect = el.getBoundingClientRect()
       const diff = Math.abs(rect.top - containerTop)
-      if (diff < minDiff) { minDiff = diff; closest = parseInt(el.getAttribute('data-page') || '1') }
+      if (diff < minDiff) {
+        minDiff = diff
+        closest = parseInt(el.getAttribute('data-page') || '1')
+      }
     })
-    if (closest !== currentPage.value) {
-      currentPage.value = closest
-      scheduleSave({ page: closest }, (closest / totalPages.value) * 100)
+    if (closest !== currentPage) {
+      currentPage = closest
+      scheduleSave({ page: closest }, (closest / (pdfDoc?.numPages ?? 1)) * 100)
     }
   })
 }
 
 onMounted(async () => {
-  if (props.format === 'epub') await initEpub()
-  else if (props.format === 'pdf') await initPdf()
+  try {
+    loading.value = true
+    if (props.format === 'epub') await initEpub()
+    else if (props.format === 'pdf') await initPdf()
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : 'Failed to load reader'
+  } finally {
+    loading.value = false
+  }
 })
 
 onUnmounted(() => {
@@ -1320,11 +1338,17 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div v-if="format === 'epub'" ref="container" class="w-full h-full" />
+  <div v-if="loading" class="flex items-center justify-center h-full text-sage text-lg">
+    Loading reader...
+  </div>
+  <div v-else-if="error" class="flex items-center justify-center h-full px-8 text-center text-clay">
+    {{ error }}
+  </div>
+  <div v-else-if="format === 'epub'" ref="container" class="w-full h-full" />
   <div
     v-else-if="format === 'pdf'"
     ref="pdfContainer"
-    class="w-full h-full overflow-y-auto p-4"
+    class="w-full h-full overflow-y-auto"
     :style="{ backgroundColor: '#2b2118' }"
   />
   <iframe

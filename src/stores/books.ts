@@ -70,6 +70,10 @@ export const useBooksStore = defineStore('books', {
       this.sort = sort
     },
 
+    setOrder(order: BooksState['order']) {
+      this.order = order
+    },
+
     toggleOrder() {
       this.order = this.order === 'asc' ? 'desc' : 'asc'
     },

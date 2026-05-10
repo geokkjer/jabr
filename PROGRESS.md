@@ -56,11 +56,17 @@
 - **`loadSavedProfile` integrated**: Replaced by `_restoreActiveProfile()` called at end of `fetchProfiles` — eliminates the coordination gap where `loadSavedProfile` might run before profiles are loaded.
 
 ## Phase 7: Frontend - Components
-- [ ] 7.1 BookCard.vue
-- [ ] 7.2 SearchBar.vue
-- [ ] 7.3 SortControls.vue
-- [ ] 7.4 CurrentlyReading.vue
-- [ ] 7.5 BookReader.vue
+- [x] 7.1 BookCard.vue
+- [x] 7.2 SearchBar.vue
+- [x] 7.3 SortControls.vue
+- [x] 7.4 CurrentlyReading.vue
+- [x] 7.5 BookReader.vue
+
+### Deviations from plan
+- **SearchBar**: Dropped debounce and `search` emit. Client-side filtering is instant — `v-model` directly on `<input>` suffices, no server calls to throttle. The plan's dual emit + `:value` pattern would have made the input appear unresponsive.
+- **BookCard**: `progress` prop simplified from `{ percent: number } | null` to `number | undefined`. Parent passes `progressStore.forBook(id)?.percent`.
+- **SortControls**: Added `setOrder` action to books store for `v-model:order` binding.
+- **BookReader**: Fixed PDF rendering (added canvas generation for each page), fixed epubjs rendition types, added loading/error states, added `initialLocation`/`initialPercent` props for progress restoration, removed unused `containerWidth` state.
 
 ## Phase 8: Frontend - Pages
 - [ ] 8.1 Vue Router configuration
