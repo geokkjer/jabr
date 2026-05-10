@@ -38,8 +38,15 @@ services:
     container_name: jabr-web
     ports:
       - "8080:80"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
     depends_on:
-      - postgrest
+      postgrest:
+        condition: service_started
 
 volumes:
   pgdata:
