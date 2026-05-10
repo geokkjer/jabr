@@ -1723,8 +1723,10 @@ function showMessage(msg: string) {
     "lint:eslint": "eslint . --fix --cache",
     "format": "oxfmt src/",
     "migrate": "tsx scripts/migrate-calibre.ts",
-    "db:up": "podman-compose up -d",
-    "db:down": "podman-compose down"
+    "db:dev:up": "podman-compose up -d",
+    "db:dev:down": "podman-compose down",
+    "db:prod:up": "podman-compose -f compose.prod.yml up -d",
+    "db:prod:down": "podman-compose -f compose.prod.yml down"
   }
 }
 ```

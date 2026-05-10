@@ -83,7 +83,7 @@
 - **Router**: Uses `createWebHistory(import.meta.env.BASE_URL)` for Vite path compatibility.
 
 ## Phase 9: Build & Deploy
-- [x] 9.1 Package.json scripts (added db:up, db:down)
+- [x] 9.1 Package.json scripts (added db:dev:up/down, db:prod:up/down)
 - [x] 9.2 Production build (pnpm build works, outputs dist/)
 - [x] 9.2a Multi-stage Dockerfile + compose.prod.yml + nginx.conf
 - [ ] 9.3 NixOS module (future — deferred until deployment needed)
