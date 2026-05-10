@@ -16,7 +16,8 @@
     "format": "oxfmt src/",
     "migrate": "tsx scripts/migrate-calibre.ts",
     "db:up": "podman-compose up -d",
-    "db:down": "podman-compose down"
+    "db:down": "podman-compose down",
+    "db:prod": "podman-compose -f compose.prod.yml up -d"
   },
   "dependencies": {
     "epubjs": "^0.3.93",
@@ -55,6 +56,9 @@
     "vite-plugin-vue-devtools": "^8.1.1",
     "vitest": "^4.1.4",
     "vue-tsc": "^3.2.6"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "better-sqlite3"]
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
