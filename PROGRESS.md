@@ -83,6 +83,11 @@
 - **Router**: Uses `createWebHistory(import.meta.env.BASE_URL)` for Vite path compatibility.
 
 ## Phase 9: Build & Deploy
-- [ ] 9.1 Package.json scripts
-- [ ] 9.2 Production build
-- [ ] 9.3 NixOS module (future)
+- [x] 9.1 Package.json scripts (added db:up, db:down)
+- [x] 9.2 Production build (pnpm build works, outputs dist/)
+- [ ] 9.3 NixOS module (future — deferred until deployment needed)
+
+### Deviations from plan
+- **Build script**: Uses `run-p type-check "build-only"` (parallel) instead of sequential `vue-tsc && vite build`. Type-check runs in project-references mode (`vue-tsc --build`) — the plan's `--noEmit` doesn't work with tsconfig references.
+- **Additional scripts**: Added `lint`, `lint:oxlint`, `lint:eslint`, and `format` scripts for code quality (oxlint, eslint, oxfmt).
+- **9.3 NixOS**: Deferred indefinitely — the current compose stack (Podman) is sufficient for development and testing. NixOS module can be added when production deployment is needed.

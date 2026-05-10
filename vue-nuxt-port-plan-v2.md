@@ -1713,10 +1713,15 @@ function showMessage(msg: string) {
 {
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
+    "build": "run-p type-check \"build-only {@}\" --",
+    "build-only": "vite build",
     "preview": "vite preview",
-    "typecheck": "vue-tsc --noEmit",
-    "test": "vitest",
+    "test:unit": "vitest",
+    "type-check": "vue-tsc --build",
+    "lint": "run-s lint:*",
+    "lint:oxlint": "oxlint . --fix",
+    "lint:eslint": "eslint . --fix --cache",
+    "format": "oxfmt src/",
     "migrate": "tsx scripts/migrate-calibre.ts",
     "db:up": "podman-compose up -d",
     "db:down": "podman-compose down"
@@ -1727,7 +1732,7 @@ function showMessage(msg: string) {
 ### 9.2 Production Build
 
 ```bash
-# Build Vue app
+# Build Vue app (type-check + vite build in parallel)
 pnpm build
 
 # Output: dist/ directory of static files

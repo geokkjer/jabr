@@ -14,7 +14,9 @@
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
     "format": "oxfmt src/",
-    "migrate": "tsx scripts/migrate-calibre.ts"
+    "migrate": "tsx scripts/migrate-calibre.ts",
+    "db:up": "podman-compose up -d",
+    "db:down": "podman-compose down"
   },
   "dependencies": {
     "epubjs": "^0.3.93",
