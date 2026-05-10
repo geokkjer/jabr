@@ -44,9 +44,16 @@
 - Created `src/types/index.ts` with `Book`, `BookProgress`, `Profile` interfaces
 
 ## Phase 6: Frontend - Pinia Stores
-- [ ] 6.1 Books store
-- [ ] 6.2 Profiles store
-- [ ] 6.3 Progress store
+- [x] 6.1 Books store
+- [x] 6.2 Profiles store
+- [x] 6.3 Progress store
+
+### Deviations from plan
+- **Client-side filtering/sorting**: The plan had server-side sort with client-side search, plus `setSearch/setSort/toggleOrder` calling `fetchBooks()` on every change. Stores now do fully client-side sorting and search — setters are local-only, the `filteredBooks` getter recomputes automatically. No unnecessary server roundtrips.
+- **`upsert` call fixed**: Plan passed 3 args (`upsert(profileId, bookId, data)`) but the actual API takes a single object. Corrected.
+- **`activeBookId` removed**: Was declared but unused in the plan. Stripped.
+- **Error handling added**: `fetchProfiles` now has `error` state + try/catch, matching `fetchBooks` pattern.
+- **`loadSavedProfile` integrated**: Replaced by `_restoreActiveProfile()` called at end of `fetchProfiles` — eliminates the coordination gap where `loadSavedProfile` might run before profiles are loaded.
 
 ## Phase 7: Frontend - Components
 - [ ] 7.1 BookCard.vue

@@ -771,12 +771,15 @@ export function useProfilesApi() {
 
 ## Phase 6: Frontend - Pinia Stores
 
+> **Note**: Client-side filtering/sorting. Stores fetch all data once; sorting and search filtering happen in getters. Sort/order/search setters are local-only — the getter recomputes automatically.
+
 ### 6.1 Books Store
 
 ```typescript
 // src/stores/books.ts
 import { defineStore } from 'pinia'
 import type { Book } from '@/types'
+import { useBooksApi } from '@/composables/useBooksApi'
 
 interface BooksState {
   books: Book[]
@@ -830,7 +833,7 @@ export const useBooksStore = defineStore('books', {
       this.error = null
       try {
         const { list } = useBooksApi()
-        this.books = await list({ sort: this.sort, order: this.order })
+        this.books = await list()
       } catch (e: unknown) {
         this.error = e instanceof Error ? e.message : 'Failed to fetch books'
       } finally {
@@ -838,9 +841,17 @@ export const useBooksStore = defineStore('books', {
       }
     },
 
-    setSearch(search: string) { this.search = search; this.fetchBooks() },
-    setSort(sort: BooksState['sort']) { this.sort = sort; this.fetchBooks() },
-    toggleOrder() { this.order = this.order === 'asc' ? 'desc' : 'asc'; this.fetchBooks() },
+    setSearch(search: string) {
+      this.search = search
+    },
+
+    setSort(sort: BooksState['sort']) {
+      this.sort = sort
+    },
+
+    toggleOrder() {
+      this.order = this.order === 'asc' ? 'desc' : 'asc'
+    },
   },
 })
 ```
@@ -851,12 +862,14 @@ export const useBooksStore = defineStore('books', {
 // src/stores/profiles.ts
 import { defineStore } from 'pinia'
 import type { Profile } from '@/types'
+import { useProfilesApi } from '@/composables/useProfilesApi'
 
 export const useProfilesStore = defineStore('profiles', {
   state: () => ({
     profiles: [] as Profile[],
     activeId: '' as string,
     loading: false,
+    error: null as string | null,
   }),
 
   getters: {
@@ -868,12 +881,13 @@ export const useProfilesStore = defineStore('profiles', {
   actions: {
     async fetchProfiles() {
       this.loading = true
+      this.error = null
       try {
         const { list } = useProfilesApi()
         this.profiles = await list()
-        if (!this.activeId && this.profiles.length > 0) {
-          this.activeId = this.profiles[0].id
-        }
+        this._restoreActiveProfile()
+      } catch (e: unknown) {
+        this.error = e instanceof Error ? e.message : 'Failed to fetch profiles'
       } finally {
         this.loading = false
       }
@@ -884,6 +898,7 @@ export const useProfilesStore = defineStore('profiles', {
       const profile = await create(name)
       this.profiles.push(profile)
       this.activeId = profile.id
+      localStorage.setItem('jabr-profile', profile.id)
     },
 
     setActiveProfile(id: string) {
@@ -891,10 +906,13 @@ export const useProfilesStore = defineStore('profiles', {
       localStorage.setItem('jabr-profile', id)
     },
 
-    loadSavedProfile() {
+    _restoreActiveProfile() {
       const saved = localStorage.getItem('jabr-profile')
       if (saved && this.profiles.some(p => p.id === saved)) {
         this.activeId = saved
+      } else if (!this.activeId) {
+        const first = this.profiles[0]
+        if (first) this.activeId = first.id
       }
     },
   },
@@ -907,12 +925,12 @@ export const useProfilesStore = defineStore('profiles', {
 // src/stores/progress.ts
 import { defineStore } from 'pinia'
 import type { BookProgress } from '@/types'
+import { useProgressApi } from '@/composables/useProgressApi'
 
 export const useProgressStore = defineStore('progress', {
   state: () => ({
     progressByBook: {} as Record<string, BookProgress>,
     loading: false,
-    activeBookId: null as string | null,
   }),
 
   getters: {
@@ -956,12 +974,12 @@ export const useProgressStore = defineStore('progress', {
         updated_at: now,
       }
 
-      // Optimistic update
       this.progressByBook[bookId] = entry
 
-      // Persist asynchronously
       const { upsert } = useProgressApi()
-      await upsert(profileId, bookId, {
+      await upsert({
+        profile_id: profileId,
+        book_id: bookId,
         format: entry.format,
         location: entry.location,
         percent: entry.percent,
