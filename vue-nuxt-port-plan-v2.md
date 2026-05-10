@@ -1731,15 +1731,63 @@ function showMessage(msg: string) {
 
 ### 9.2 Production Build
 
+**Development** (existing `compose.yml`):
 ```bash
-# Build Vue app (type-check + vite build in parallel)
-pnpm build
+podman-compose up -d           # postgres + postgrest (ports 5432, 3001)
+pnpm dev                        # vite dev server (port 5173, /api proxy to 3001)
+```
 
-# Output: dist/ directory of static files
-# Serve with any static server, e.g.:
-#   python -m http.server -d dist 8080
-#   npx serve dist
-#   podman run -d -p 8080:80 -v ./dist:/usr/share/nginx/html:Z nginx:alpine
+**Production** (`compose.prod.yml` + `Dockerfile`):
+```bash
+podman-compose -f compose.prod.yml up -d
+# → postgres (internal) + postgrest (internal) + nginx SPA on port 8080
+```
+
+```dockerfile
+# Dockerfile — multi-stage build
+# Stage 1: Build Vue SPA
+FROM node:22-alpine AS build
+WORKDIR /app
+RUN corepack enable
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY . .
+RUN pnpm build
+
+# Stage 2: Serve with nginx
+FROM nginx:alpine
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
+```
+
+**nginx.conf** — SPA routing with `/api` proxy:
+```nginx
+server {
+    listen 80;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location /api/ {
+        proxy_pass http://postgrest:3000/;  # strips /api prefix
+        proxy_set_header Host $host;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;   # SPA fallback
+    }
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml text/html;
+    gzip_vary on;
+}
+```
+
+**Architecture (production):**
+```
+Browser :8080 → nginx → /api/* → PostgREST → PostgreSQL
+                       → /*     → Vue SPA (static files)
 ```
 
 ### 9.3 NixOS Module (Future)

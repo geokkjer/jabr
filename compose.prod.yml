@@ -1,0 +1,45 @@
+name: jabr
+
+services:
+  postgres:
+    image: docker.io/library/postgres:18-alpine
+    container_name: jabr-postgres
+    environment:
+      POSTGRES_DB: jabr
+      POSTGRES_USER: jabr
+      POSTGRES_PASSWORD: jabr
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:Z
+      - ./db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:Z
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jabr -d jabr"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  postgrest:
+    image: docker.io/postgrest/postgrest:v14.11
+    container_name: jabr-postgrest
+    environment:
+      PGRST_DB_URI: postgres://jabr:jabr@postgres:5432/jabr
+      PGRST_DB_SCHEMA: api
+      PGRST_DB_ANON_ROLE: anon
+      PGRST_DB_POOL: "10"
+      PGRST_DB_MAX_ROWS: "1000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jabr-web
+    ports:
+      - "8080:80"
+    depends_on:
+      - postgrest
+
+volumes:
+  pgdata:
