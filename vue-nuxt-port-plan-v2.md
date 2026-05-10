@@ -1363,6 +1363,8 @@ onUnmounted(() => {
 
 ## Phase 8: Frontend - Pages
 
+> **Note**: Pages use `storeToRefs` + `v-model` bindings for direct store interaction. No debounce or custom event bridges needed — components use `defineModel` and `v-model:xxx`.
+
 ### 8.1 Vue Router Configuration
 
 ```typescript
@@ -1384,10 +1386,12 @@ const routes = [
   },
 ]
 
-export default createRouter({
-  history: createWebHistory(),
+const router = createRouter({
+  history: createWebHistory(import.meta.env.BASE_URL),
   routes,
 })
+
+export default router
 ```
 
 ### 8.2 App.vue
@@ -1395,12 +1399,12 @@ export default createRouter({
 ```vue
 <!-- src/App.vue -->
 <script setup lang="ts">
-// Minimal root — just layout + routing
+import { RouterView } from 'vue-router'
 </script>
 
 <template>
   <div class="min-h-screen bg-parchment text-coffee">
-    <router-view />
+    <RouterView />
   </div>
 </template>
 ```
@@ -1417,6 +1421,9 @@ import { useProgressStore } from '@/stores/progress'
 import { useProfilesStore } from '@/stores/profiles'
 import { storeToRefs } from 'pinia'
 import type { Book } from '@/types'
+import BookCard from '@/components/BookCard.vue'
+import SearchBar from '@/components/SearchBar.vue'
+import SortControls from '@/components/SortControls.vue'
 
 const router = useRouter()
 const booksStore = useBooksStore()
@@ -1424,10 +1431,11 @@ const progressStore = useProgressStore()
 const profilesStore = useProfilesStore()
 const { filteredBooks, loading, error, search, sort, order } = storeToRefs(booksStore)
 
-onMounted(() => {
-  profilesStore.fetchProfiles().then(() => {
-    booksStore.fetchBooks()
-  })
+onMounted(async () => {
+  await Promise.all([
+    profilesStore.fetchProfiles(),
+    booksStore.fetchBooks(),
+  ])
 })
 
 function openBook(book: Book) {
@@ -1449,13 +1457,8 @@ function openBook(book: Book) {
 
     <!-- Controls -->
     <div class="flex items-center gap-4 mb-6">
-      <SearchBar v-model="search" class="flex-1 max-w-md" @search="booksStore.setSearch" />
-      <SortControls
-        :sort="sort"
-        :order="order"
-        @update:sort="booksStore.setSort"
-        @update:order="($v: any) => booksStore.order = $v"
-      />
+      <SearchBar v-model="search" class="flex-1 max-w-md" />
+      <SortControls v-model:sort="sort" v-model:order="order" />
     </div>
 
     <!-- Error -->
@@ -1480,7 +1483,7 @@ function openBook(book: Book) {
         v-for="(book, i) in filteredBooks"
         :key="book.id || i"
         :book="book"
-        :progress="progressStore.forBook(book.id)"
+        :progress="progressStore.forBook(book.id)?.percent"
         @click="openBook"
         @read="openBook"
       />
@@ -1504,14 +1507,14 @@ import type { Book } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
-const bookId = computed(() => route.params.id as string)
+const profilesStore = useProfilesStore()
+const progressStore = useProgressStore()
 
+const bookId = computed(() => route.params.id as string)
 const book = ref<Book | null>(null)
 const contentUrl = ref('')
 const loading = ref(true)
-const progressStore = useProgressStore()
-
-let saveInterval: ReturnType<typeof setInterval>
+const error = ref<string | null>(null)
 
 onMounted(async () => {
   try {
@@ -1520,28 +1523,26 @@ onMounted(async () => {
     if (!book.value) { router.push('/'); return }
 
     const buffer = await fetchContent(bookId.value, book.value.format)
-    const blob = new Blob([buffer], { type: `${book.value.format === 'epub' ? 'application/epub+zip' : book.value.format === 'pdf' ? 'application/pdf' : 'text/plain'}` })
+    const blob = new Blob([buffer], {
+      type: book.value.format === 'epub'
+        ? 'application/epub+zip'
+        : book.value.format === 'pdf'
+          ? 'application/pdf'
+          : 'text/plain',
+    })
     contentUrl.value = URL.createObjectURL(blob)
 
-    // Load existing progress
-    const profilesStore = useProfilesStore()
     if (profilesStore.activeId) {
       await progressStore.fetchProgress(profilesStore.activeId, bookId.value)
     }
-
-    // Auto-save every 30s
-    saveInterval = setInterval(saveCurrentProgress, 30000)
+  } catch (e: unknown) {
+    error.value = e instanceof Error ? e.message : 'Failed to load book'
   } finally {
     loading.value = false
   }
 })
 
-function saveCurrentProgress() {
-  // Progress is saved via the BookReader's progress event
-}
-
 function onProgress(location: Record<string, unknown>, percent: number) {
-  const profilesStore = useProfilesStore()
   if (profilesStore.activeId) {
     progressStore.saveProgress(profilesStore.activeId, bookId.value, {
       format: book.value?.format || '',
@@ -1552,16 +1553,21 @@ function onProgress(location: Record<string, unknown>, percent: number) {
 }
 
 onUnmounted(() => {
-  clearInterval(saveInterval)
   if (contentUrl.value) URL.revokeObjectURL(contentUrl.value)
 })
 </script>
 
 <template>
-  <div class="h-screen flex flex-col" :style="{ backgroundColor: book?.format === 'epub' || book?.format === 'pdf' ? '#2b2118' : 'var(--color-parchment)' }">
+  <div
+    class="h-screen flex flex-col"
+    :style="{ backgroundColor: book?.format === 'epub' || book?.format === 'pdf' ? '#2b2118' : 'var(--color-parchment)' }"
+  >
     <!-- Header -->
     <header class="h-16 bg-coffee border-b-4 border-ocher flex items-center px-6 justify-between shrink-0">
-      <router-link to="/" class="flex items-center gap-2 text-parchment hover:text-ocher transition-colors font-display font-bold uppercase tracking-wide">
+      <router-link
+        to="/"
+        class="flex items-center gap-2 text-parchment hover:text-ocher transition-colors font-display font-bold uppercase tracking-wide"
+      >
         &larr; Library
       </router-link>
       <h1 class="font-display font-bold text-lg text-parchment truncate max-w-md mx-4">
@@ -1575,11 +1581,17 @@ onUnmounted(() => {
         <p class="text-parchment font-bold text-xl animate-pulse">Loading...</p>
       </div>
 
+      <div v-else-if="error" class="absolute inset-0 flex items-center justify-center px-8">
+        <p class="text-clay font-bold text-center">{{ error }}</p>
+      </div>
+
       <BookReader
         v-else-if="contentUrl && book"
         :book-id="book.id"
         :format="book.format"
         :content-url="contentUrl"
+        :initial-location="progressStore.forBook(bookId)?.location"
+        :initial-percent="progressStore.forBook(bookId)?.percent"
         @progress="onProgress"
       />
 
@@ -1601,7 +1613,7 @@ import { useProfilesStore } from '@/stores/profiles'
 import { storeToRefs } from 'pinia'
 
 const profilesStore = useProfilesStore()
-const { profiles, activeId } = storeToRefs(profilesStore)
+const { profiles, activeId, loading, error } = storeToRefs(profilesStore)
 const newName = ref('')
 const message = ref('')
 
@@ -1633,10 +1645,21 @@ function showMessage(msg: string) {
       {{ message }}
     </div>
 
+    <div v-if="error" class="mb-6 p-3 rounded-xl bg-clay/10 border border-clay/30 text-clay font-medium">
+      {{ error }}
+    </div>
+
     <!-- Profiles -->
     <section class="mb-8">
       <h2 class="font-display text-xl font-bold text-coffee mb-4">Reading Profiles</h2>
-      <div class="space-y-2">
+
+      <div v-if="loading" class="text-center py-8 text-sage">Loading profiles...</div>
+
+      <div v-else-if="profiles.length === 0" class="text-center py-8 text-sage">
+        No profiles yet. Create one below.
+      </div>
+
+      <div v-else class="space-y-2">
         <div
           v-for="profile in profiles"
           :key="profile.id"
@@ -1653,6 +1676,7 @@ function showMessage(msg: string) {
           <span v-else class="text-sm font-bold text-sage">Active</span>
         </div>
       </div>
+
       <form class="mt-4 flex gap-2" @submit.prevent="addProfile">
         <input
           v-model="newName"

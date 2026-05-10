@@ -69,11 +69,18 @@
 - **BookReader**: Fixed PDF rendering (added canvas generation for each page), fixed epubjs rendition types, added loading/error states, added `initialLocation`/`initialPercent` props for progress restoration, removed unused `containerWidth` state.
 
 ## Phase 8: Frontend - Pages
-- [ ] 8.1 Vue Router configuration
-- [ ] 8.2 App.vue
-- [ ] 8.3 LibraryPage.vue (Home)
-- [ ] 8.4 ReaderPage.vue
-- [ ] 8.5 SettingsPage.vue
+- [x] 8.1 Vue Router configuration
+- [x] 8.2 App.vue
+- [x] 8.3 LibraryPage.vue (Home)
+- [x] 8.4 ReaderPage.vue
+- [x] 8.5 SettingsPage.vue
+
+### Deviations from plan
+- **LibraryPage**: Added missing component imports (BookCard, SearchBar, SortControls). Fixed SearchBar to use only `v-model` (no `@search` emit — dropped in Phase 7). Fixed SortControls to use `v-model:sort` / `v-model:order` with `storeToRefs` refs (removed inline `($v: any)` handler). Fixed BookCard `:progress` to pass `?.percent` (number) instead of `BookProgress` object. Changed sequential `fetchProfiles().then(fetchBooks)` to parallel `Promise.all`.
+- **ReaderPage**: Added `error` state + `catch` block. Passes `initialLocation` and `initialPercent` props to BookReader for progress restoration. Moved `useProfilesStore()` to setup level. Removed dead `saveInterval` + empty `saveCurrentProgress()` (BookReader's debounced `progress` emit handles saving).
+- **SettingsPage**: Added `loading`/`error` states from profiles store. Added empty state if no profiles.
+- **App.vue**: Added `min-h-screen bg-parchment text-coffee` wrapper div. Kept PascalCase `RouterView` import.
+- **Router**: Uses `createWebHistory(import.meta.env.BASE_URL)` for Vite path compatibility.
 
 ## Phase 9: Build & Deploy
 - [ ] 9.1 Package.json scripts
