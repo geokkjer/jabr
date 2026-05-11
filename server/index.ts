@@ -87,9 +87,13 @@ app.get('/api/books/search', async (req: Request, res: Response) => {
 })
 
 // Serve book file
-app.get('/api/book/*', (req: Request, res: Response) => {
+app.use('/api/book', (req: Request, res: Response) => {
+  if (req.method !== 'GET') {
+    res.status(405).json({ error: 'Method not allowed' })
+    return
+  }
   try {
-    const path = req.params[0]
+    const path = req.path.replace(/^\/api\/book\//, '')
     if (!path) {
       res.status(400).json({ error: 'Missing path' })
       return
