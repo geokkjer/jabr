@@ -6,7 +6,7 @@ interface Props {
   progress?: number | null
 }
 
-const props = defineProps<Props>()
+defineProps<Props>()
 const emit = defineEmits<{ click: [book: Book]; read: [book: Book] }>()
 
 function formatSize(bytes: number): string {
@@ -18,44 +18,38 @@ function formatSize(bytes: number): string {
 
 <template>
   <div
-    class="rounded-xl border-2 border-coffee/10 bg-card p-4 shadow-md transition-all hover:shadow-lg hover:-translate-y-0.5 cursor-pointer"
+    class="group relative block h-full bg-card border-4 border-coffee rounded-2xl p-6 transition-all duration-200 hover:-translate-y-1 hover:shadow-brutal-lg active:translate-y-0 active:shadow-none cursor-pointer"
     @click="emit('click', book)"
   >
-    <div class="flex items-start justify-between gap-3">
-      <div class="min-w-0 flex-1">
-        <h3 class="font-display font-bold text-lg truncate text-coffee">
+    <div class="flex flex-col h-full justify-between gap-6">
+      <div>
+        <div class="flex justify-between items-start mb-4">
+          <span
+            class="inline-block px-3 py-1 bg-forest text-parchment text-xs font-bold uppercase tracking-wider rounded-full border-2 border-coffee"
+          >
+            {{ book.format }}
+          </span>
+          <span class="text-xs font-bold text-leather font-mono">
+            {{ formatSize(book.size) }}
+          </span>
+        </div>
+        <h2
+          class="text-3xl font-bold text-coffee leading-tight mb-2 line-clamp-3 group-hover:text-ocher transition-colors"
+        >
           {{ book.title || 'Untitled' }}
-        </h3>
-        <p class="text-sm text-leather truncate mt-0.5">
+        </h2>
+      </div>
+
+      <div class="border-t-2 border-coffee/20 pt-4">
+        <p class="text-lg font-medium text-leather truncate">
           {{ book.author || 'Unknown Author' }}
         </p>
       </div>
-      <span class="shrink-0 px-2 py-0.5 text-xs font-bold rounded-md bg-ocher/10 text-ocher uppercase">
-        {{ book.format }}
-      </span>
-    </div>
-
-    <div class="mt-4 flex items-center justify-between text-sm">
-      <span class="text-sage">{{ formatSize(book.size) }}</span>
-      <button
-        v-if="progress"
-        class="font-bold text-ocher hover:text-ocher/80 transition-colors"
-        @click.stop="emit('read', book)"
-      >
-        Resume {{ Math.round(progress) }}%
-      </button>
-      <button
-        v-else
-        class="font-bold text-forest hover:text-forest/80 transition-colors"
-        @click.stop="emit('read', book)"
-      >
-        Read
-      </button>
     </div>
 
     <div
-      v-if="progress"
-      class="mt-3 h-1.5 rounded-full bg-sage/20 overflow-hidden"
+      v-if="progress && progress > 0"
+      class="mt-4 h-2 rounded-full bg-sage/20 overflow-hidden"
     >
       <div
         class="h-full rounded-full bg-ocher transition-all duration-300"

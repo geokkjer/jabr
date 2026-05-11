@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useBooksApi } from '@/composables/useBooksApi'
-import { useProgressStore } from '@/stores/progress'
+import { useBooksApi } from '@/composables/useApi'
+import { useProgressStore } from '@/stores/profiles'
 import { useProfilesStore } from '@/stores/profiles'
 import BookReader from '@/components/BookReader.vue'
 import type { Book } from '@/types'
@@ -12,27 +12,24 @@ const router = useRouter()
 const profilesStore = useProfilesStore()
 const progressStore = useProgressStore()
 
-const bookId = computed(() => route.params.id as string)
+const bookId = computed(() => decodeURIComponent(route.params.id as string))
 const book = ref<Book | null>(null)
 const contentUrl = ref('')
 const loading = ref(true)
 const error = ref<string | null>(null)
+const currentPage = ref(1)
+const totalPages = ref(0)
 
 onMounted(async () => {
   try {
-    const { getById, fetchContent } = useBooksApi()
+    const { getById, getContentUrl } = useBooksApi()
     book.value = await getById(bookId.value)
-    if (!book.value) { router.push('/'); return }
+    if (!book.value) {
+      error.value = 'Book not found'
+      return
+    }
 
-    const buffer = await fetchContent(bookId.value, book.value.format)
-    const blob = new Blob([buffer], {
-      type: book.value.format === 'epub'
-        ? 'application/epub+zip'
-        : book.value.format === 'pdf'
-          ? 'application/pdf'
-          : 'text/plain',
-    })
-    contentUrl.value = URL.createObjectURL(blob)
+    contentUrl.value = getContentUrl(bookId.value)
 
     if (profilesStore.activeId) {
       await progressStore.fetchProgress(profilesStore.activeId, bookId.value)
@@ -45,18 +42,23 @@ onMounted(async () => {
 })
 
 function onProgress(location: Record<string, unknown>, percent: number) {
-  if (profilesStore.activeId) {
+  if (profilesStore.activeId && book.value) {
     progressStore.saveProgress(profilesStore.activeId, bookId.value, {
-      format: book.value?.format || '',
+      format: book.value.format,
       location,
       percent,
     })
   }
 }
 
-onUnmounted(() => {
-  if (contentUrl.value) URL.revokeObjectURL(contentUrl.value)
-})
+function onPageChange(page: number, total: number) {
+  currentPage.value = page
+  totalPages.value = total
+}
+
+function goBack() {
+  router.push('/')
+}
 </script>
 
 <template>
@@ -65,16 +67,27 @@ onUnmounted(() => {
     :style="{ backgroundColor: book?.format === 'epub' || book?.format === 'pdf' ? '#2b2118' : 'var(--color-parchment)' }"
   >
     <!-- Header -->
-    <header class="h-16 bg-coffee border-b-4 border-ocher flex items-center px-6 justify-between shrink-0">
-      <router-link
-        to="/"
-        class="flex items-center gap-2 text-parchment hover:text-ocher transition-colors font-display font-bold uppercase tracking-wide"
+    <header class="h-16 bg-forest border-b-4 border-coffee flex items-center px-6 justify-between shrink-0 z-10 shadow-md">
+      <button
+        class="group flex items-center gap-2 text-parchment hover:text-ocher transition-colors"
+        @click="goBack"
       >
-        &larr; Library
-      </router-link>
-      <h1 class="font-display font-bold text-lg text-parchment truncate max-w-md mx-4">
+        <span class="text-2xl font-bold">&larr;</span>
+        <span class="font-display font-bold text-lg uppercase tracking-wide">Library</span>
+      </button>
+
+      <h1 class="text-xl font-display font-bold text-parchment truncate max-w-md mx-4">
         {{ book?.title || 'Loading...' }}
       </h1>
+
+      <div class="flex items-center gap-4">
+        <span
+          v-if="book?.format === 'pdf' && totalPages > 0"
+          class="text-parchment font-bold font-mono bg-coffee/30 px-3 py-1 rounded-lg"
+        >
+          Page {{ currentPage }} / {{ totalPages }}
+        </span>
+      </div>
     </header>
 
     <!-- Reader -->
@@ -87,14 +100,23 @@ onUnmounted(() => {
         <p class="text-clay font-bold text-center">{{ error }}</p>
       </div>
 
+      <div
+        v-else-if="book && (book.format === 'unknown')"
+        class="flex flex-col items-center justify-center h-full text-coffee bg-parchment"
+      >
+        <p class="text-2xl font-display font-bold mb-2">Unsupported Format</p>
+        <p class="text-leather">We can't read this book yet.</p>
+      </div>
+
       <BookReader
         v-else-if="contentUrl && book"
         :book-id="book.id"
         :format="book.format"
         :content-url="contentUrl"
-        :initial-location="progressStore.forBook(bookId)?.location"
+        :initial-location="progressStore.forBook(bookId)?.locationJson ? JSON.parse(progressStore.forBook(bookId)!.locationJson) : null"
         :initial-percent="progressStore.forBook(bookId)?.percent"
         @progress="onProgress"
+        @page-change="onPageChange"
       />
 
       <div v-else class="absolute inset-0 flex items-center justify-center text-parchment">

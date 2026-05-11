@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import type { Book } from '@/types'
-import { useBooksApi } from '@/composables/useBooksApi'
+import { useBooksApi } from '@/composables/useApi'
 
 interface BooksState {
   books: Book[]
@@ -28,15 +28,17 @@ export const useBooksStore = defineStore('books', {
       if (state.search) {
         const q = state.search.toLowerCase()
         result = result.filter(
-          b => b.title.toLowerCase().includes(q)
-            || b.author.toLowerCase().includes(q)
+          (b) =>
+            b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q)
         )
       }
 
       result.sort((a, b) => {
-        const aVal = String(a[state.sort] || '').toLowerCase()
-        const bVal = String(b[state.sort] || '').toLowerCase()
-        const cmp = aVal.localeCompare(bVal)
+        let cmp = 0
+        if (state.sort === 'title') cmp = a.title.localeCompare(b.title)
+        else if (state.sort === 'author') cmp = a.author.localeCompare(b.author)
+        else if (state.sort === 'size') cmp = a.size - b.size
+        else if (state.sort === 'mtime') cmp = new Date(a.mtime).getTime() - new Date(b.mtime).getTime()
         return state.order === 'asc' ? cmp : -cmp
       })
 
@@ -67,7 +69,12 @@ export const useBooksStore = defineStore('books', {
     },
 
     setSort(sort: BooksState['sort']) {
-      this.sort = sort
+      if (this.sort === sort) {
+        this.toggleOrder()
+      } else {
+        this.sort = sort
+        this.order = sort === 'size' || sort === 'mtime' ? 'desc' : 'asc'
+      }
     },
 
     setOrder(order: BooksState['order']) {
@@ -76,6 +83,17 @@ export const useBooksStore = defineStore('books', {
 
     toggleOrder() {
       this.order = this.order === 'asc' ? 'desc' : 'asc'
+    },
+
+    async uploadBook(file: File) {
+      try {
+        const { upload } = useBooksApi()
+        await upload(file)
+        await this.fetchBooks()
+      } catch (e: unknown) {
+        this.error = e instanceof Error ? e.message : 'Failed to upload book'
+        throw e
+      }
     },
   },
 })

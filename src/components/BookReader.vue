@@ -13,6 +13,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   progress: [location: Record<string, unknown>, percent: number]
+  pageChange: [page: number, total: number]
 }>()
 
 const loading = ref(true)
@@ -20,7 +21,7 @@ const error = ref<string | null>(null)
 const container = ref<HTMLDivElement | null>(null)
 const pdfContainer = ref<HTMLDivElement | null>(null)
 
-let rendition: any = null
+let rendition: ReturnType<typeof ePub.prototype.renderTo> | null = null
 let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
 let currentPage = 1
 let saveTimer: ReturnType<typeof setTimeout>
@@ -39,6 +40,25 @@ async function initEpub() {
     flow: 'scrolled-doc',
   })
 
+  // Inject dark theme styles
+  rendition.hooks.content.register((contents: { addStylesheetRules: (rules: Record<string, Record<string, string>>) => void }) => {
+    contents.addStylesheetRules({
+      'html, body': {
+        'background-color': '#2b2118 !important',
+        color: '#fdfdf7 !important',
+        'font-family': 'serif !important',
+      },
+      'p, div, span, h1, h2, h3, h4, h5, h6, li, a, section, article, main': {
+        color: '#fdfdf7 !important',
+        'background-color': 'transparent !important',
+      },
+      img: {
+        'max-width': '100% !important',
+        height: 'auto !important',
+      },
+    })
+  })
+
   const cfi = props.initialLocation?.cfi as string | undefined
   await (cfi ? rendition.display(cfi) : rendition.display())
 
@@ -50,51 +70,115 @@ async function initEpub() {
   })
 }
 
+function prevPage() {
+  if (rendition) rendition.prev()
+}
+
+function nextPage() {
+  if (rendition) rendition.next()
+}
+
 async function initPdf() {
   if (!pdfContainer.value) return
   pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-    'pdfjs-dist/build/pdf.worker.min.mjs', import.meta.url
+    'pdfjs-dist/build/pdf.worker.min.mjs',
+    import.meta.url
   ).toString()
 
   const loadingTask = pdfjsLib.getDocument(props.contentUrl)
   pdfDoc = await loadingTask.promise
 
-  for (let i = 1; i <= pdfDoc.numPages; i++) {
-    const page = await pdfDoc.getPage(i)
-    const viewport = page.getViewport({ scale: 1.5 })
-    const canvas = document.createElement('canvas')
-    canvas.setAttribute('data-page', String(i))
-    canvas.width = viewport.width
-    canvas.height = viewport.height
-    canvas.className = 'mb-4 shadow-lg'
-    await page.render({ canvas, viewport }).promise
-    pdfContainer.value.appendChild(canvas)
+  const totalPages = pdfDoc.numPages
+  emit('pageChange', 1, totalPages)
+
+  // Render all pages with lazy loading using IntersectionObserver
+  const placeholders: HTMLElement[] = []
+
+  for (let i = 1; i <= totalPages; i++) {
+    const div = document.createElement('div')
+    div.dataset.page = i.toString()
+    div.className = 'mx-auto my-8 relative flex items-center justify-center'
+    div.style.minHeight = '800px'
+    div.innerHTML = `<div class="absolute inset-0 flex items-center justify-center text-parchment/10 font-bold text-6xl">${i}</div>`
+    pdfContainer.value.appendChild(div)
+    placeholders.push(div)
   }
 
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting && pdfDoc) {
+          const pageNum = parseInt((entry.target as HTMLElement).dataset.page || '1')
+          renderPdfPage(pdfDoc, pageNum, entry.target as HTMLElement)
+        }
+      })
+    },
+    {
+      root: pdfContainer.value,
+      rootMargin: '1000px',
+      threshold: 0.1,
+    }
+  )
+
+  placeholders.forEach((p) => observer.observe(p))
+
+  // Scroll to saved page
   const savedPage = props.initialLocation?.page as number | undefined
-  if (savedPage && savedPage <= pdfDoc.numPages) {
-    const el = pdfContainer.value.querySelector(`[data-page="${savedPage}"]`) as HTMLElement | null
-    el?.scrollIntoView({ block: 'start' })
+  if (savedPage && savedPage <= totalPages) {
+    setTimeout(() => {
+      const target = pdfContainer.value?.querySelector(`[data-page="${savedPage}"]`)
+      if (target) target.scrollIntoView()
+    }, 100)
   }
 
+  // Track scroll to update current page
   pdfContainer.value.addEventListener('scroll', () => {
     if (!pdfContainer.value || !pdfDoc) return
-    const els = pdfContainer.value.querySelectorAll('[data-page]')
+    const els = Array.from(pdfContainer.value.querySelectorAll('div[data-page]'))
     const containerTop = pdfContainer.value.getBoundingClientRect().top
-    let closest = 1, minDiff = Infinity
-    els.forEach((el) => {
+
+    let closest = 1
+    let minDiff = Infinity
+
+    for (const el of els) {
       const rect = el.getBoundingClientRect()
       const diff = Math.abs(rect.top - containerTop)
       if (diff < minDiff) {
         minDiff = diff
-        closest = parseInt(el.getAttribute('data-page') || '1')
+        closest = parseInt((el as HTMLElement).dataset.page || '1')
       }
-    })
+    }
+
     if (closest !== currentPage) {
       currentPage = closest
-      scheduleSave({ page: closest }, (closest / (pdfDoc?.numPages ?? 1)) * 100)
+      emit('pageChange', currentPage, totalPages)
+      scheduleSave({ page: currentPage }, (currentPage / totalPages) * 100)
     }
   })
+}
+
+async function renderPdfPage(
+  pdf: pdfjsLib.PDFDocumentProxy,
+  pageNumber: number,
+  container: HTMLElement
+) {
+  if (container.querySelector('canvas')) return
+
+  const page = await pdf.getPage(pageNumber)
+  const viewport = page.getViewport({ scale: 1.5 })
+
+  const canvas = document.createElement('canvas')
+  const context = canvas.getContext('2d')
+  canvas.height = viewport.height
+  canvas.width = viewport.width
+  canvas.className = 'mx-auto shadow-lg max-w-full h-auto bg-white'
+
+  container.appendChild(canvas)
+
+  await page.render({
+    canvasContext: context!,
+    viewport,
+  } as unknown as { promise: Promise<void> }).promise
 }
 
 onMounted(async () => {
@@ -113,27 +197,54 @@ onUnmounted(() => {
   clearTimeout(saveTimer)
   rendition?.destroy()
   pdfDoc?.destroy()
-  URL.revokeObjectURL(props.contentUrl)
 })
 </script>
 
 <template>
-  <div v-if="loading" class="flex items-center justify-center h-full text-sage text-lg">
-    Loading reader...
+  <div class="relative w-full h-full">
+    <!-- Loading -->
+    <div v-if="loading" class="flex items-center justify-center h-full text-sage text-lg">
+      Loading reader...
+    </div>
+
+    <!-- Error -->
+    <div v-else-if="error" class="flex items-center justify-center h-full px-8 text-center text-clay">
+      {{ error }}
+    </div>
+
+    <!-- EPUB -->
+    <div v-else-if="format === 'epub'" class="relative w-full h-full">
+      <div ref="container" class="w-full h-full" />
+      <!-- EPUB Navigation -->
+      <div class="absolute bottom-6 left-1/2 -translate-x-1/2 flex gap-3 z-10">
+        <button
+          class="px-4 py-2 bg-parchment text-coffee font-bold border-2 border-coffee rounded-lg shadow-brutal hover:translate-y-px hover:shadow-[2px_2px_0px_0px_var(--color-shadow)] active:translate-y-1 active:shadow-none transition-all"
+          @click="prevPage"
+        >
+          Prev
+        </button>
+        <button
+          class="px-4 py-2 bg-ocher text-coffee font-bold border-2 border-coffee rounded-lg shadow-brutal hover:translate-y-px hover:shadow-[2px_2px_0px_0px_var(--color-shadow)] active:translate-y-1 active:shadow-none transition-all"
+          @click="nextPage"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+
+    <!-- PDF -->
+    <div
+      v-else-if="format === 'pdf'"
+      ref="pdfContainer"
+      class="w-full h-full overflow-y-auto p-4 scroll-smooth"
+      :style="{ backgroundColor: '#2b2118' }"
+    />
+
+    <!-- Text -->
+    <iframe
+      v-else
+      :src="contentUrl"
+      class="w-full h-full border-0 bg-card p-8 font-serif text-lg leading-relaxed max-w-3xl mx-auto"
+    />
   </div>
-  <div v-else-if="error" class="flex items-center justify-center h-full px-8 text-center text-clay">
-    {{ error }}
-  </div>
-  <div v-else-if="format === 'epub'" ref="container" class="w-full h-full" />
-  <div
-    v-else-if="format === 'pdf'"
-    ref="pdfContainer"
-    class="w-full h-full overflow-y-auto"
-    :style="{ backgroundColor: '#2b2118' }"
-  />
-  <iframe
-    v-else
-    :src="contentUrl"
-    class="w-full h-full border-0"
-  />
 </template>

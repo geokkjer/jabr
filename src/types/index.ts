@@ -2,24 +2,69 @@ export interface Book {
   id: string
   title: string
   author: string
-  format: string
+  path: string
+  format: 'pdf' | 'epub' | 'txt' | 'md' | 'unknown'
   size: number
-  identifiers: Record<string, string>
-  mtime: number
-  indexed_at: number
+  mtime: Date
 }
 
 export interface BookProgress {
-  profile_id: string
-  book_id: string
+  profileId: string
+  bookId: string
   format: string
-  location: Record<string, unknown>
-  percent: number
-  updated_at: number
+  locationJson: string
+  percent: number | null
+  updatedAt: number
 }
 
 export interface Profile {
   id: string
   name: string
-  created_at: number
+  createdAt: number
+}
+
+export interface Settings {
+  libraryPath: string | null
+  authEnabled: string | null
+  username: string | null
+  password: string | null
+  readerTarget: string | null
+}
+
+// Result type for type-safe error handling
+export type Result<T, E = Error> =
+  | { success: true; data: T }
+  | { success: false; error: E }
+
+export const Result = {
+  ok: <T>(data: T): Result<T> => ({ success: true, data }),
+  err: <T, E = Error>(error: E): Result<T, E> => ({ success: false, error }),
+} as const
+
+// Book location discriminated union
+export type BookLocation =
+  | { format: 'epub'; cfi: string }
+  | { format: 'pdf'; page: number }
+  | { format: 'text'; position: number }
+  | { format: 'unknown'; location: null }
+
+export function parseBookLocation(format: string, location: unknown): BookLocation {
+  if (!location || typeof location !== 'object') {
+    return { format: 'unknown', location: null }
+  }
+
+  const loc = location as Record<string, unknown>
+
+  switch (format) {
+    case 'epub':
+      return { format: 'epub', cfi: String(loc.cfi ?? '') }
+    case 'pdf':
+      return { format: 'pdf', page: Number(loc.page ?? 1) }
+    case 'txt':
+    case 'md':
+    case 'text':
+      return { format: 'text', position: Number(loc.position ?? 0) }
+    default:
+      return { format: 'unknown', location: null }
+  }
 }

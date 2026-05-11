@@ -41,3 +41,24 @@ body {
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display);
 }
+
+/* Brutalist shadow utilities */
+.shadow-brutal {
+  box-shadow: 4px 4px 0px 0px var(--color-shadow);
+}
+
+.shadow-brutal-lg {
+  box-shadow: 8px 8px 0px 0px var(--color-shadow);
+}
+
+.hover\:shadow-brutal:hover {
+  box-shadow: 4px 4px 0px 0px var(--color-shadow);
+}
+
+.hover\:shadow-brutal-lg:hover {
+  box-shadow: 8px 8px 0px 0px var(--color-shadow);
+}
+
+.active\:shadow-none:active {
+  box-shadow: none;
+}

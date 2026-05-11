@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
-import type { Profile } from '@/types'
-import { useProfilesApi } from '@/composables/useProfilesApi'
+import type { Profile, BookProgress } from '@/types'
+import { useProfilesApi, useProgressApi } from '@/composables/useApi'
 
 export const useProfilesStore = defineStore('profiles', {
   state: () => ({
@@ -12,7 +12,7 @@ export const useProfilesStore = defineStore('profiles', {
 
   getters: {
     activeProfile(state): Profile | undefined {
-      return state.profiles.find(p => p.id === state.activeId)
+      return state.profiles.find((p) => p.id === state.activeId)
     },
   },
 
@@ -46,12 +46,76 @@ export const useProfilesStore = defineStore('profiles', {
 
     _restoreActiveProfile() {
       const saved = localStorage.getItem('jabr-profile')
-      if (saved && this.profiles.some(p => p.id === saved)) {
+      if (saved && this.profiles.some((p) => p.id === saved)) {
         this.activeId = saved
       } else if (!this.activeId) {
         const first = this.profiles[0]
         if (first) this.activeId = first.id
       }
+    },
+  },
+})
+
+export const useProgressStore = defineStore('progress', {
+  state: () => ({
+    progressByBook: {} as Record<string, BookProgress>,
+    loading: false,
+  }),
+
+  getters: {
+    forBook: (state) => (bookId: string): BookProgress | undefined =>
+      state.progressByBook[bookId],
+
+    recentlyRead: (state): BookProgress[] =>
+      Object.values(state.progressByBook)
+        .filter((p) => (p.percent ?? 0) > 0)
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .slice(0, 4),
+  },
+
+  actions: {
+    async fetchProgress(profileId: string, bookId: string) {
+      this.loading = true
+      try {
+        const { get } = useProgressApi()
+        const progress = await get(profileId, bookId)
+        if (progress) {
+          this.progressByBook[bookId] = progress
+        }
+      } finally {
+        this.loading = false
+      }
+    },
+
+    async fetchAllProgress(profileId: string) {
+      // Fetch recent progress for all books
+      // Since we don't have a bulk endpoint, we'll fetch on demand
+      // The recentlyRead getter will work with what we have
+    },
+
+    async saveProgress(
+      profileId: string,
+      bookId: string,
+      data: { format: string; location: Record<string, unknown>; percent: number }
+    ) {
+      const now = Date.now()
+      const entry: BookProgress = {
+        profileId,
+        bookId,
+        format: data.format,
+        locationJson: JSON.stringify(data.location),
+        percent: data.percent,
+        updatedAt: now,
+      }
+
+      this.progressByBook[bookId] = entry
+
+      const { save } = useProgressApi()
+      await save(profileId, bookId, data)
+    },
+
+    clearProgress() {
+      this.progressByBook = {}
     },
   },
 })
