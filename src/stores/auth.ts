@@ -59,6 +59,8 @@ export const useSettingsStore = defineStore('settings', {
       username: null,
       password: null,
       readerTarget: null,
+      calibreMigrated: null,
+      calibreLibraryPath: null,
     } as Settings,
     loading: false,
     error: null as string | null,
@@ -91,6 +93,22 @@ export const useSettingsStore = defineStore('settings', {
       } finally {
         this.loading = false
       }
+    },
+
+    async migrateFromCalibre(
+      libraryPath: string,
+      options?: { preferFormat?: string; dryRun?: boolean }
+    ) {
+      const res = await fetch('/api/migrate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ libraryPath, ...options }),
+      })
+      if (!res.ok) {
+        const err = await res.text()
+        throw new Error(err)
+      }
+      return res.json() as Promise<import('@/types').MigrateResult>
     },
 
     async resetDatabase() {

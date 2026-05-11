@@ -29,6 +29,24 @@ export interface Settings {
   username: string | null
   password: string | null
   readerTarget: string | null
+  calibreMigrated: string | null
+  calibreLibraryPath: string | null
+}
+
+export interface MigrateResult {
+  dryRun: boolean
+  total: number
+  copied: number
+  skipped: number
+  errors: number
+  details: Array<{
+    action: 'copy' | 'skip' | 'error' | 'dry-run'
+    title: string
+    author: string
+    format: string
+    reason?: string
+  }>
+  errors_list: string[]
 }
 
 // Result type for type-safe error handling

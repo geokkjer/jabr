@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3'
-import { readFile, mkdir, copyFile } from 'node:fs/promises'
+import { mkdir, copyFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { join, extname } from 'node:path'
+import { join } from 'node:path'
 import { resolve } from 'node:path'
 
 interface CalibreBook {
@@ -9,6 +9,7 @@ interface CalibreBook {
   title: string
   author: string
   path: string
+  fileName: string
   format: string
   size: number
   mtime: Date
@@ -27,6 +28,8 @@ function parseArgs(args: string[]): Record<string, string | boolean> {
       parsed.library = args[++i]
     } else if (arg === '--books-dir') {
       parsed['books-dir'] = args[++i]
+    } else if (arg === '--prefer-format') {
+      parsed['prefer-format'] = args[++i]
     }
   }
   return parsed
@@ -36,16 +39,19 @@ function printHelp() {
   console.log(`Usage: pnpm tsx scripts/migrate-calibre.ts [options]
 
 Options:
-  --library, -l   Path to Calibre library directory (required)
-  --books-dir     Target books directory (default: ./books)
-  --dry-run       Show plan without executing
-  --help, -h      Show this help message
+  --library, -l          Path to Calibre library directory (required)
+  --books-dir            Target books directory (default: ./books)
+  --prefer-format        Only copy this format when multiple exist (e.g. epub, pdf)
+  --dry-run              Show plan without executing
+  --help, -h             Show this help message
+
+Note: Calibre books can have multiple formats. By default all are copied.
+Use --prefer-format to pick one format per book when duplicates exist.
 `)
 }
 
-function readCalibreDatabase(dbPath: string): CalibreBook[] {
+function readCalibreDatabase(dbPath: string, preferFormat?: string): CalibreBook[] {
   const db = new Database(dbPath, { readonly: true })
-  const books: CalibreBook[] = []
 
   const rows = db
     .prepare(
@@ -55,21 +61,23 @@ function readCalibreDatabase(dbPath: string): CalibreBook[] {
       b.title,
       COALESCE(a.name, 'Unknown') AS author,
       b.path,
+      d.name AS file_name,
       d.format,
       d.uncompressed_size AS size,
-      d.last_modified AS mtime
+      b.last_modified AS mtime
     FROM books b
     LEFT JOIN books_authors_link bal ON b.id = bal.book
     LEFT JOIN authors a ON bal.author = a.id
     LEFT JOIN data d ON b.id = d.book
-    ORDER BY b.id
+    ORDER BY b.id, d.format
   `
     )
     .all() as Array<{
     id: number
     title: string
     author: string
-    path: string
+    path: string | null
+    file_name: string
     format: string
     size: number
     mtime: string
@@ -85,22 +93,51 @@ function readCalibreDatabase(dbPath: string): CalibreBook[] {
     idMap.get(row.book)![row.type] = row.val
   }
 
-  for (const row of rows) {
-    if (!row.format) continue
-    books.push({
+  db.close()
+
+  if (preferFormat) {
+    const seen = new Map<number, CalibreBook>()
+    const preferred = preferFormat.toLowerCase()
+
+    for (const row of rows) {
+      if (!row.format || !row.path) continue
+
+      const book: CalibreBook = {
+        id: row.id,
+        title: row.title,
+        author: row.author,
+        path: row.path,
+        fileName: row.file_name,
+        format: row.format.toLowerCase(),
+        size: row.size || 0,
+        mtime: new Date(row.mtime),
+        identifiers: idMap.get(row.id) ?? {},
+      }
+
+      const existing = seen.get(row.id)
+      if (!existing) {
+        seen.set(row.id, book)
+      } else if (book.format === preferred && existing.format !== preferred) {
+        seen.set(row.id, book)
+      }
+    }
+
+    return Array.from(seen.values())
+  }
+
+  return rows
+    .filter((r) => r.format && r.path)
+    .map((row) => ({
       id: row.id,
       title: row.title,
       author: row.author,
-      path: row.path,
+      path: row.path!,
+      fileName: row.file_name,
       format: row.format.toLowerCase(),
       size: row.size || 0,
       mtime: new Date(row.mtime),
       identifiers: idMap.get(row.id) ?? {},
-    })
-  }
-
-  db.close()
-  return books
+    }))
 }
 
 async function main() {
@@ -125,6 +162,7 @@ async function main() {
 
   const booksDir = resolve(args['books-dir'] as string || './books')
   const dryRun = args['dry-run'] === true
+  const preferFormat = args['prefer-format'] as string | undefined
 
   const calibreDbPath = join(libraryPath, 'metadata.db')
   if (!existsSync(calibreDbPath)) {
@@ -132,15 +170,24 @@ async function main() {
     process.exit(1)
   }
 
-  const books = readCalibreDatabase(calibreDbPath)
+  const books = readCalibreDatabase(calibreDbPath, preferFormat)
   console.log(`Found ${books.length} books in Calibre library`)
+
+  await mkdir(booksDir, { recursive: true })
 
   let copied = 0
   let skipped = 0
+  const total = books.length
 
-  for (const book of books) {
+  for (let i = 0; i < total; i++) {
+    const book = books[i]
+
+    if (total > 10 && (i + 1) % Math.ceil(total / 10) === 0) {
+      console.log(`  Progress: ${i + 1}/${total} (${Math.round(((i + 1) / total) * 100)}%)`)
+    }
+
     const ext = `.${book.format}`
-    const sourcePath = join(libraryPath, book.path, `${book.title}${ext}`)
+    const sourcePath = join(libraryPath, book.path, `${book.fileName}${ext}`)
 
     if (!existsSync(sourcePath)) {
       console.warn(`  Skipping: file not found: ${sourcePath}`)
@@ -161,11 +208,10 @@ async function main() {
 
     if (existsSync(destPath)) {
       skipped++
-      console.log(`  Skipped (exists): ${book.title} by ${book.author}`)
+      console.log(`  Skipped (exists): ${book.title} by ${book.author} (${book.format})`)
       continue
     }
 
-    await mkdir(booksDir, { recursive: true })
     await copyFile(sourcePath, destPath)
     copied++
     console.log(`  Copied: ${book.title} by ${book.author} (${book.format})`)

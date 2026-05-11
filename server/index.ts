@@ -19,6 +19,7 @@ import {
   AUTH_COOKIE_NAME,
   AUTH_COOKIE_MAX_AGE,
 } from './config.js'
+import { migrateFromCalibre } from './migrate.js'
 import {
   getDb,
   getSetting,
@@ -249,10 +250,41 @@ app.put('/api/progress/:bookId', (req: Request, res: Response) => {
   }
 })
 
+// Migrate from Calibre
+app.post('/api/migrate', async (req: Request, res: Response) => {
+  try {
+    const { libraryPath, preferFormat, dryRun } = req.body
+    if (!libraryPath || typeof libraryPath !== 'string') {
+      res.status(400).json({ error: 'Missing libraryPath' })
+      return
+    }
+    if (!existsSync(libraryPath)) {
+      res.status(400).json({ error: 'Library path does not exist' })
+      return
+    }
+
+    const result = await migrateFromCalibre(libraryPath, {
+      preferFormat: preferFormat as string | undefined,
+      dryRun: dryRun === true,
+    })
+
+    if (!dryRun) {
+      setSetting('calibreMigrated', 'true')
+      setSetting('calibreLibraryPath', libraryPath)
+      await scanAndIndex()
+    }
+
+    res.json(result)
+  } catch (e) {
+    console.error('Failed to migrate:', e)
+    res.status(500).json({ error: e instanceof Error ? e.message : 'Migration failed' })
+  }
+})
+
 // Settings
 app.get('/api/settings', (_req: Request, res: Response) => {
   try {
-    const keys = ['libraryPath', 'authEnabled', 'username', 'password', 'readerTarget']
+    const keys = ['libraryPath', 'authEnabled', 'username', 'password', 'readerTarget', 'calibreMigrated', 'calibreLibraryPath']
     const settings: Record<string, string | null> = {}
     for (const key of keys) {
       settings[key] = getSetting(key)
