@@ -382,7 +382,7 @@ app.get('/api/export', async (_req: Request, res: Response) => {
 if (NODE_ENV === 'production') {
   const distDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../dist')
   app.use(express.static(distDir))
-  app.get('*', (_req: Request, res: Response) => {
+  app.use((_req: Request, res: Response) => {
     res.sendFile(join(distDir, 'index.html'))
   })
 }
