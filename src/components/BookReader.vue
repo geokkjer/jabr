@@ -168,17 +168,14 @@ async function renderPdfPage(
   const viewport = page.getViewport({ scale: 1.5 })
 
   const canvas = document.createElement('canvas')
-  const context = canvas.getContext('2d')
   canvas.height = viewport.height
   canvas.width = viewport.width
   canvas.className = 'mx-auto shadow-lg max-w-full h-auto bg-white'
 
   container.appendChild(canvas)
 
-  await page.render({
-    canvasContext: context!,
-    viewport,
-  } as unknown as { promise: Promise<void> }).promise
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  await page.render({ canvas, viewport } as any).promise
 }
 
 onMounted(async () => {
