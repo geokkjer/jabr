@@ -1,7 +1,8 @@
 import express from 'express'
 import cors from 'cors'
 import multer from 'multer'
-import { join, extname, basename, resolve, relative, sep } from 'node:path'
+import { join, extname, basename, resolve, relative, sep, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createWriteStream, existsSync, statSync, createReadStream } from 'node:fs'
 import { mkdir, rm } from 'node:fs/promises'
 import { Readable } from 'node:stream'
@@ -10,6 +11,7 @@ import type { Request, Response } from 'express'
 
 import {
   PORT,
+  NODE_ENV,
   getBooksDir,
   UPLOAD_MAX_BYTES,
   ALLOWED_EXTENSIONS_SET,
@@ -371,6 +373,15 @@ app.get('/api/export', async (_req: Request, res: Response) => {
     res.status(500).json({ error: 'Failed to export' })
   }
 })
+
+// Serve static files in production
+if (NODE_ENV === 'production') {
+  const distDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../dist')
+  app.use(express.static(distDir))
+  app.get('*', (_req: Request, res: Response) => {
+    res.sendFile(join(distDir, 'index.html'))
+  })
+}
 
 // Start server
 app.listen(PORT, () => {

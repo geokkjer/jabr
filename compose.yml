@@ -1,40 +1,23 @@
 name: jabr
 
 services:
-  postgres:
-    image: docker.io/library/postgres:18-alpine
-    container_name: jabr-postgres
-    environment:
-      POSTGRES_DB: jabr
-      POSTGRES_USER: jabr
-      POSTGRES_PASSWORD: jabr
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jabr-web
     ports:
-      - "5432:5432"
+      - "8080:3001"
     volumes:
-      - pgdata:/var/lib/postgresql
-      - ./db/init.sql:/docker-entrypoint-initdb.d/01-init.sql:Z
-      - ./db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:Z
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U jabr -d jabr"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  postgrest:
-    image: docker.io/postgrest/postgrest:v14.11
-    container_name: jabr-postgrest
-    ports:
-      - "3001:3000"
+      - data:/app/data
+      - books:/app/books
     environment:
-      PGRST_DB_URI: postgres://jabr:jabr@postgres:5432/jabr
-      PGRST_DB_SCHEMA: api
-      PGRST_DB_ANON_ROLE: anon
-      PGRST_OPENAPI_SERVER_PROXY_URI: http://localhost:3001
-      PGRST_DB_POOL: "10"
-      PGRST_DB_MAX_ROWS: "1000"
-    depends_on:
-      postgres:
-        condition: service_healthy
+      NODE_ENV: production
+      JABR_PORT: "3001"
+      JABR_DB_PATH: /app/data/jabr.sqlite3
+      JABR_BOOKS_PATH: /app/books
+    restart: unless-stopped
 
 volumes:
-  pgdata:
+  data:
+  books:

@@ -19,11 +19,7 @@
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
     "format": "oxfmt src/",
-    "migrate": "tsx scripts/migrate-calibre.ts",
-    "db:dev:up": "podman-compose up -d",
-    "db:dev:down": "podman-compose down",
-    "db:prod:up": "podman-compose -f compose.prod.yml up -d",
-    "db:prod:down": "podman-compose -f compose.prod.yml down"
+    "migrate": "tsx scripts/migrate-calibre.ts"
   },
   "dependencies": {
     "epubjs": "^0.3.93",
@@ -41,7 +37,6 @@
     "@types/jsdom": "^28.0.1",
     "@types/multer": "^1.4.12",
     "@types/node": "^24.12.2",
-    "@types/pg": "^8.20.0",
     "@vitejs/plugin-vue": "^6.0.6",
     "@vitest/eslint-plugin": "^1.6.16",
     "@vue/eslint-config-typescript": "^14.7.0",
@@ -61,7 +56,6 @@
     "npm-run-all2": "^8.0.4",
     "oxfmt": "^0.45.0",
     "oxlint": "~1.60.0",
-    "pg": "^8.20.0",
     "tailwindcss": "^4.2.4",
     "tsx": "^4.21.0",
     "typescript": "~6.0.0",

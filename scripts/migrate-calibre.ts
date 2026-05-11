@@ -1,8 +1,8 @@
 import Database from 'better-sqlite3'
-import { readFile } from 'node:fs/promises'
+import { readFile, mkdir, copyFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
-import { join } from 'node:path'
-import pg from 'pg'
+import { join, extname } from 'node:path'
+import { resolve } from 'node:path'
 
 interface CalibreBook {
   id: number
@@ -25,8 +25,8 @@ function parseArgs(args: string[]): Record<string, string | boolean> {
       parsed.help = true
     } else if (arg === '--library' || arg === '-l') {
       parsed.library = args[++i]
-    } else if (arg === '--db-url') {
-      parsed['db-url'] = args[++i]
+    } else if (arg === '--books-dir') {
+      parsed['books-dir'] = args[++i]
     }
   }
   return parsed
@@ -37,7 +37,7 @@ function printHelp() {
 
 Options:
   --library, -l   Path to Calibre library directory (required)
-  --db-url        PostgreSQL connection string (default: postgres://jabr:jabr@localhost:5432/jabr)
+  --books-dir     Target books directory (default: ./books)
   --dry-run       Show plan without executing
   --help, -h      Show this help message
 `)
@@ -47,7 +47,9 @@ function readCalibreDatabase(dbPath: string): CalibreBook[] {
   const db = new Database(dbPath, { readonly: true })
   const books: CalibreBook[] = []
 
-  const rows = db.prepare(`
+  const rows = db
+    .prepare(
+      `
     SELECT
       b.id,
       b.title,
@@ -61,7 +63,9 @@ function readCalibreDatabase(dbPath: string): CalibreBook[] {
     LEFT JOIN authors a ON bal.author = a.id
     LEFT JOIN data d ON b.id = d.book
     ORDER BY b.id
-  `).all() as Array<{
+  `
+    )
+    .all() as Array<{
     id: number
     title: string
     author: string
@@ -71,10 +75,9 @@ function readCalibreDatabase(dbPath: string): CalibreBook[] {
     mtime: string
   }>
 
-  const identifiers = db.prepare(`
-    SELECT book, type, val
-    FROM identifiers
-  `).all() as Array<{ book: number; type: string; val: string }>
+  const identifiers = db
+    .prepare('SELECT book, type, val FROM identifiers')
+    .all() as Array<{ book: number; type: string; val: string }>
 
   const idMap = new Map<number, Record<string, string>>()
   for (const row of identifiers) {
@@ -120,7 +123,7 @@ async function main() {
     process.exit(1)
   }
 
-  const dbUrl = (args['db-url'] as string) ?? 'postgres://jabr:jabr@localhost:5432/jabr'
+  const booksDir = resolve(args['books-dir'] as string || './books')
   const dryRun = args['dry-run'] === true
 
   const calibreDbPath = join(libraryPath, 'metadata.db')
@@ -132,57 +135,46 @@ async function main() {
   const books = readCalibreDatabase(calibreDbPath)
   console.log(`Found ${books.length} books in Calibre library`)
 
-  if (dryRun) {
-    for (const book of books) {
-      console.log(`  [DRY RUN] ${book.title} by ${book.author} (${book.format}, ${book.size} bytes)`)
-    }
-    console.log(`\n[DRY RUN] Would insert ${books.length} books into PostgreSQL`)
-    return
-  }
-
-  const pool = new pg.Pool({ connectionString: dbUrl })
-
-  let inserted = 0
+  let copied = 0
   let skipped = 0
 
   for (const book of books) {
-    const filePath = join(libraryPath, book.path, `${book.title}.${book.format}`)
+    const ext = `.${book.format}`
+    const sourcePath = join(libraryPath, book.path, `${book.title}${ext}`)
 
-    if (!existsSync(filePath)) {
-      console.warn(`  Skipping: file not found: ${filePath}`)
+    if (!existsSync(sourcePath)) {
+      console.warn(`  Skipping: file not found: ${sourcePath}`)
       skipped++
       continue
     }
 
-    const content = await readFile(filePath)
+    const safeName = `${book.author} - ${book.title}${ext}`
+      .replace(/[/\\?%*:|"<>]/g, '_')
+      .replace(/\s+/g, ' ')
+      .trim()
+    const destPath = join(booksDir, safeName)
 
-    const result = await pool.query(
-      `INSERT INTO api.books (title, author, format, content, size, identifiers, mtime, indexed_at)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8)
-       ON CONFLICT DO NOTHING`,
-      [
-        book.title,
-        book.author,
-        book.format,
-        content,
-        book.size,
-        JSON.stringify(book.identifiers),
-        book.mtime.getTime(),
-        Date.now(),
-      ],
-    )
-
-    if (result.rowCount && result.rowCount > 0) {
-      inserted++
-      console.log(`  Inserted: ${book.title} by ${book.author} (${book.format})`)
-    } else {
-      skipped++
-      console.log(`  Skipped (duplicate): ${book.title} by ${book.author}`)
+    if (dryRun) {
+      console.log(`  [DRY RUN] ${sourcePath} -> ${destPath}`)
+      continue
     }
+
+    if (existsSync(destPath)) {
+      skipped++
+      console.log(`  Skipped (exists): ${book.title} by ${book.author}`)
+      continue
+    }
+
+    await mkdir(booksDir, { recursive: true })
+    await copyFile(sourcePath, destPath)
+    copied++
+    console.log(`  Copied: ${book.title} by ${book.author} (${book.format})`)
   }
 
-  await pool.end()
-  console.log(`\nMigration complete! Inserted: ${inserted}, Skipped: ${skipped}`)
+  console.log(`\nMigration complete! Copied: ${copied}, Skipped: ${skipped}`)
+  if (copied > 0) {
+    console.log('Restart the server to reindex the books directory.')
+  }
 }
 
 main().catch((err) => {

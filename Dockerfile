@@ -1,4 +1,3 @@
-# Stage 1: Build Vue SPA
 FROM node:22-alpine AS build
 
 WORKDIR /app
@@ -11,14 +10,18 @@ RUN pnpm install --frozen-lockfile --dangerously-allow-all-builds
 COPY . .
 RUN pnpm build
 
-# Stage 2: Serve with nginx
-FROM docker.io/library/nginx:alpine
+FROM node:22-alpine
 
-RUN apk add --no-cache curl
+RUN corepack enable
 
-COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+WORKDIR /app
 
-EXPOSE 80
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/package.json ./package.json
+COPY --from=build /app/server ./server
+COPY --from=build /app/tsconfig.json ./tsconfig.json
 
-CMD ["nginx", "-g", "daemon off;"]
+EXPOSE 3001
+
+CMD ["node", "dist/server/index.js"]

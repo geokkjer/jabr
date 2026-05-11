@@ -40,3 +40,7 @@ __screenshots__/
 
 # Environment
 .env
+
+# Runtime data
+data/
+books/
