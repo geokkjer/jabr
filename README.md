@@ -119,4 +119,4 @@ The original version used PostgreSQL + PostgREST. It worked. It was also complet
 
 ## License
 
-MIT
+AGPL-3.0-or-later
