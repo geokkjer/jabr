@@ -22,6 +22,8 @@
     "migrate": "tsx scripts/migrate-calibre.ts"
   },
   "dependencies": {
+    "@effect/schema": "^0.75.5",
+    "effect": "^3.21.4",
     "epubjs": "^0.3.93",
     "pdfjs-dist": "^5.7.284",
     "pinia": "^3.0.4",
@@ -65,7 +67,10 @@
     "vue-tsc": "^3.2.6"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "better-sqlite3"]
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "better-sqlite3"
+    ]
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"

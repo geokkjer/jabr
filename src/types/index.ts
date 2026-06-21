@@ -5,7 +5,7 @@ export interface Book {
   path: string
   format: 'pdf' | 'epub' | 'txt' | 'md' | 'unknown'
   size: number
-  mtime: Date
+  mtime: string
 }
 
 export interface BookProgress {
@@ -23,15 +23,23 @@ export interface Profile {
   createdAt: number
 }
 
-export interface Settings {
-  libraryPath: string | null
+export interface AuthSettings {
   authEnabled: string | null
   username: string | null
   password: string | null
+}
+
+export interface LibrarySettings {
+  libraryPath: string | null
   readerTarget: string | null
+}
+
+export interface MigrationSettings {
   calibreMigrated: string | null
   calibreLibraryPath: string | null
 }
+
+export interface Settings extends AuthSettings, LibrarySettings, MigrationSettings {}
 
 export interface MigrateResult {
   dryRun: boolean
@@ -49,15 +57,6 @@ export interface MigrateResult {
   errors_list: string[]
 }
 
-// Result type for type-safe error handling
-export type Result<T, E = Error> =
-  | { success: true; data: T }
-  | { success: false; error: E }
-
-export const Result = {
-  ok: <T>(data: T): Result<T> => ({ success: true, data }),
-  err: <T, E = Error>(error: E): Result<T, E> => ({ success: false, error }),
-} as const
 
 // Book location discriminated union
 export type BookLocation =

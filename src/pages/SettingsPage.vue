@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useSettingsStore } from '@/stores/auth'
+import { useSettingsStore } from '@/stores/settings'
 import { useProfilesStore } from '@/stores/profiles'
 import { storeToRefs } from 'pinia'
 import Logo from '@/components/Logo.vue'
@@ -141,7 +141,7 @@ async function resetApp() {
 
 async function exportBackup() {
   try {
-    const res = await fetch('/api/export')
+    const res = await fetch('/api/settings/export')
     if (!res.ok) throw new Error('Export failed')
     const blob = await res.blob()
     const url = window.URL.createObjectURL(blob)

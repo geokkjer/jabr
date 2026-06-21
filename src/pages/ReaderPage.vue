@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { useBooksApi } from '@/composables/useApi'
-import { useProgressStore } from '@/stores/profiles'
+import { Effect, pipe } from 'effect'
+import { BookApi } from '@/services/api'
+import { useProgressStore } from '@/stores/progress'
 import { useProfilesStore } from '@/stores/profiles'
 import BookReader from '@/components/BookReader.vue'
 import type { Book } from '@/types'
@@ -21,24 +22,30 @@ const currentPage = ref(1)
 const totalPages = ref(0)
 
 onMounted(async () => {
-  try {
-    const { getById, getContentUrl } = useBooksApi()
-    book.value = await getById(bookId.value)
-    if (!book.value) {
-      error.value = 'Book not found'
-      return
-    }
+  const result = await Effect.runPromise(
+    pipe(
+      BookApi.getById(bookId.value),
+      Effect.catchAll((err) => {
+        error.value = err.message
+        return Effect.succeed(null)
+      }),
+    ),
+  )
 
-    contentUrl.value = getContentUrl(bookId.value)
-
-    if (profilesStore.activeId) {
-      await progressStore.fetchProgress(profilesStore.activeId, bookId.value)
-    }
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Failed to load book'
-  } finally {
+  if (!result) {
+    error.value = 'Book not found'
     loading.value = false
+    return
   }
+
+  book.value = result as Book
+  contentUrl.value = BookApi.getContentUrl(bookId.value)
+
+  if (profilesStore.activeId) {
+    await progressStore.fetchProgress(profilesStore.activeId, bookId.value)
+  }
+
+  loading.value = false
 })
 
 function onProgress(location: Record<string, unknown>, percent: number) {
@@ -100,16 +107,8 @@ function goBack() {
         <p class="text-clay font-bold text-center">{{ error }}</p>
       </div>
 
-      <div
-        v-else-if="book && (book.format === 'unknown')"
-        class="flex flex-col items-center justify-center h-full text-coffee bg-parchment"
-      >
-        <p class="text-2xl font-display font-bold mb-2">Unsupported Format</p>
-        <p class="text-leather">We can't read this book yet.</p>
-      </div>
-
       <BookReader
-        v-else-if="contentUrl && book"
+        v-if="contentUrl && book"
         :book-id="book.id"
         :format="book.format"
         :content-url="contentUrl"

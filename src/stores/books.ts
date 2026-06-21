@@ -1,99 +1,125 @@
 import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+import { Effect, pipe } from 'effect'
+import { BookApi } from '@/services/api'
 import type { Book } from '@/types'
-import { useBooksApi } from '@/composables/useApi'
 
-interface BooksState {
-  books: Book[]
-  loading: boolean
-  error: string | null
-  search: string
-  sort: 'title' | 'author' | 'size' | 'mtime'
-  order: 'asc' | 'desc'
-}
+export const useBooksStore = defineStore('books', () => {
+  // ── State ──
+  const books = ref<Book[]>([])
+  const loading = ref(false)
+  const error = ref<string | null>(null)
+  const search = ref('')
+  const sort = ref<'title' | 'author' | 'size' | 'mtime'>('title')
+  const order = ref<'asc' | 'desc'>('asc')
 
-export const useBooksStore = defineStore('books', {
-  state: (): BooksState => ({
-    books: [],
-    loading: false,
-    error: null,
-    search: '',
-    sort: 'title',
-    order: 'asc',
-  }),
+  // ── Getters ──
+  const filteredBooks = computed<Book[]>(() => {
+    let result = [...books.value]
 
-  getters: {
-    filteredBooks(state): Book[] {
-      let result = [...state.books]
+    if (search.value) {
+      const q = search.value.toLowerCase()
+      result = result.filter(
+        (b) =>
+          b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q),
+      )
+    }
 
-      if (state.search) {
-        const q = state.search.toLowerCase()
-        result = result.filter(
-          (b) =>
-            b.title.toLowerCase().includes(q) || b.author.toLowerCase().includes(q)
-        )
+    result.sort((a, b) => {
+      let cmp = 0
+      switch (sort.value) {
+        case 'title':
+          cmp = a.title.localeCompare(b.title)
+          break
+        case 'author':
+          cmp = a.author.localeCompare(b.author)
+          break
+        case 'size':
+          cmp = a.size - b.size
+          break
+        case 'mtime':
+          cmp = new Date(a.mtime).getTime() - new Date(b.mtime).getTime()
+          break
       }
+      return order.value === 'asc' ? cmp : -cmp
+    })
 
-      result.sort((a, b) => {
-        let cmp = 0
-        if (state.sort === 'title') cmp = a.title.localeCompare(b.title)
-        else if (state.sort === 'author') cmp = a.author.localeCompare(b.author)
-        else if (state.sort === 'size') cmp = a.size - b.size
-        else if (state.sort === 'mtime') cmp = new Date(a.mtime).getTime() - new Date(b.mtime).getTime()
-        return state.order === 'asc' ? cmp : -cmp
-      })
+    return result
+  })
 
-      return result
-    },
+  const bookCount = computed(() => books.value.length)
 
-    bookCount(state): number {
-      return state.books.length
-    },
-  },
+  // ── Actions ──
+  async function fetchBooks() {
+    loading.value = true
+    error.value = null
 
-  actions: {
-    async fetchBooks() {
-      this.loading = true
-      this.error = null
-      try {
-        const { list } = useBooksApi()
-        this.books = await list()
-      } catch (e: unknown) {
-        this.error = e instanceof Error ? e.message : 'Failed to fetch books'
-      } finally {
-        this.loading = false
-      }
-    },
+    const result = await Effect.runPromise(
+      pipe(
+        BookApi.list,
+        Effect.catchAll((err) => {
+          error.value = err.message
+          return Effect.succeed([] as unknown as Book[])
+        }),
+      ),
+    )
+    books.value = result as Book[]
+    loading.value = false
+  }
 
-    setSearch(search: string) {
-      this.search = search
-    },
+  function setSearch(q: string) {
+    search.value = q
+  }
 
-    setSort(sort: BooksState['sort']) {
-      if (this.sort === sort) {
-        this.toggleOrder()
-      } else {
-        this.sort = sort
-        this.order = sort === 'size' || sort === 'mtime' ? 'desc' : 'asc'
-      }
-    },
+  function setSort(field: typeof sort.value) {
+    if (sort.value === field) {
+      toggleOrder()
+    } else {
+      sort.value = field
+      order.value = field === 'size' || field === 'mtime' ? 'desc' : 'asc'
+    }
+  }
 
-    setOrder(order: BooksState['order']) {
-      this.order = order
-    },
+  function setOrder(o: typeof order.value) {
+    order.value = o
+  }
 
-    toggleOrder() {
-      this.order = this.order === 'asc' ? 'desc' : 'asc'
-    },
+  function toggleOrder() {
+    order.value = order.value === 'asc' ? 'desc' : 'asc'
+  }
 
-    async uploadBook(file: File) {
-      try {
-        const { upload } = useBooksApi()
-        await upload(file)
-        await this.fetchBooks()
-      } catch (e: unknown) {
-        this.error = e instanceof Error ? e.message : 'Failed to upload book'
-        throw e
-      }
-    },
-  },
+  async function uploadBook(file: File) {
+    const result = await Effect.runPromise(
+      pipe(
+        BookApi.upload(file),
+        Effect.tap(() => fetchBooks()),
+        Effect.catchAll((err) => {
+          error.value = err.message
+          return Effect.fail(err)
+        }),
+      ),
+    )
+
+    if (result instanceof Error) throw result
+  }
+
+  return {
+    // state
+    books,
+    loading,
+    error,
+    search,
+    sort,
+    order,
+    // getters
+    filteredBooks,
+    bookCount,
+    // actions
+    fetchBooks,
+    setSearch,
+    setSort,
+    setOrder,
+    toggleOrder,
+    uploadBook,
+  }
 })

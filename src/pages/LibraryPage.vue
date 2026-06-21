@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useBooksStore } from '@/stores/books'
-import { useProgressStore } from '@/stores/profiles'
+import { useProgressStore } from '@/stores/progress'
 import { useProfilesStore } from '@/stores/profiles'
 import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
