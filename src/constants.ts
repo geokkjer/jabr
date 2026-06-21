@@ -1,0 +1,4 @@
+export const PROGRESS_SAVE_DEBOUNCE_MS = 750
+export const PDF_RENDER_SCALE = 1.5
+export const PDF_OBSERVER_ROOT_MARGIN = '1000px'
+export const PDF_OBSERVER_THRESHOLD = 0.1

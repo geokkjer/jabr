@@ -65,8 +65,9 @@ All endpoints live under `/api`:
 |---|---|---|
 | `GET` | `/api/books` | Scan filesystem and return indexed books |
 | `GET` | `/api/books/search?q=` | Search by title or author |
-| `GET` | `/api/book/:path` | Serve book file |
-| `POST` | `/api/upload` | Upload a book (multipart form) |
+| `GET` | `/api/books/:id` | Get a single book by ID |
+| `GET` | `/api/book/*` | Serve book file by path |
+| `POST` | `/api/books/upload` | Upload a book (multipart form) |
 | `GET` | `/api/profiles` | List reading profiles |
 | `POST` | `/api/profiles` | Create a profile |
 | `GET` | `/api/progress/:bookId` | Get reading progress |
@@ -74,11 +75,11 @@ All endpoints live under `/api`:
 | `GET` | `/api/settings` | Get all settings |
 | `POST` | `/api/settings` | Save settings |
 | `DELETE` | `/api/settings` | Reset database (irreversible) |
+| `GET` | `/api/settings/export` | Download full backup (JSON) |
+| `POST` | `/api/settings/migrate` | Import from Calibre library |
 | `POST` | `/api/login` | Authenticate |
 | `DELETE` | `/api/login` | Deauthenticate |
 | `GET` | `/api/login/status` | Check if auth is enabled |
-| `GET` | `/api/export` | Download full backup (JSON) |
-| `POST` | `/api/migrate` | Import from Calibre library |
 | `GET` | `/api/health` | Returns `{"status":"ok"}` |
 
 ## Calibre Migration
@@ -110,6 +111,19 @@ The Dockerfile does a multi-stage build:
 3. `CMD ["node", "dist/server/index.js"]`
 
 The `compose.yml` mounts `data` and `books` volumes for persistence.
+
+## Security
+
+JABR is designed for **local network use only**. It is not hardened for direct internet exposure.
+
+If you plan to expose JABR outside your local network, you should implement the following before doing so:
+
+- **Password hashing**: Passwords are currently stored and compared in plain text. Use bcrypt or argon2 for storage and verification.
+- **API authentication middleware**: API endpoints are not protected by authentication. Add middleware that verifies the `jabr_auth` cookie on all state-modifying endpoints.
+- **Database hardening**: The `resetDatabase` function uses dynamic table names. While currently whitelisted in code, refactor to use explicit queries.
+- **HTTPS**: Use a reverse proxy (nginx, Caddy) to terminate TLS.
+- **Rate limiting**: Add rate limiting on `/api/login` to prevent brute force attacks.
+- **Content Security Policy**: Add proper CSP headers to mitigate XSS risks.
 
 ## Why not PostgreSQL?
 
