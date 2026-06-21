@@ -9,8 +9,7 @@
     "outDir": "../dist/server",
     "rootDir": ".",
     "resolveJsonModule": true,
-    "declaration": true,
-    "declarationMap": true,
+    "declaration": false,
     "sourceMap": true
   },
   "include": ["./**/*.ts"],

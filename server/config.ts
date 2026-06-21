@@ -31,7 +31,7 @@ export const UPLOAD_MAX_BYTES = 1024 * 1024 * 512 // 512MB
 export const BOOK_SCAN_CACHE_TTL_MS = 5000
 
 export const ALLOWED_EXTENSIONS = ['.pdf', '.epub', '.txt', '.md'] as const
-export const ALLOWED_EXTENSIONS_SET = new Set(ALLOWED_EXTENSIONS)
+export const ALLOWED_EXTENSIONS_SET: Set<string> = new Set(ALLOWED_EXTENSIONS)
 
 export const CONTENT_TYPES: Record<string, string> = {
   '.pdf': 'application/pdf',
@@ -41,4 +41,20 @@ export const CONTENT_TYPES: Record<string, string> = {
 }
 
 export const AUTH_COOKIE_NAME = 'jabr_auth'
-export const AUTH_COOKIE_MAX_AGE = 60 * 60 * 24 * 7 // 1 week
+export const AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7 // 1 week
+
+export const SAFE_FILENAME_PATTERN = /[^a-zA-Z0-9._ -]+/g
+export const MAX_FILENAME_LENGTH = 255
+
+export const PROGRESS_SAVE_DEBOUNCE_MS = 750
+export const PDF_RENDER_SCALE = 1.5
+export const PDF_OBSERVER_ROOT_MARGIN = '1000px'
+export const PDF_OBSERVER_THRESHOLD = 0.1
+
+export const TIMESTAMP_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+} as const
