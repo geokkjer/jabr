@@ -44,8 +44,12 @@ if (NODE_ENV === 'production') {
 }
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`JABR server running on port ${PORT}`)
-  console.log(`Books directory: ${getBooksDir()}`)
-  console.log(`Database: ${resolve(process.cwd(), 'data', 'jabr.sqlite3')}`)
-})
+if (NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`JABR server running on port ${PORT}`)
+    console.log(`Books directory: ${getBooksDir()}`)
+    console.log(`Database: ${resolve(process.cwd(), 'data', 'jabr.sqlite3')}`)
+  })
+}
+
+export { app }

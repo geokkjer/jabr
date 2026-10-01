@@ -1,95 +1,126 @@
-# JABR Vue Port - Progress Tracker
+# JABR: Progress Report
+
+> *The following is a record of what we actually built, not what we planned to build before we realized that PostgreSQL for a single-user book reader is like hiring a cargo ship to cross a pond.*
 
 ## Phase 1: Project Foundation
-- [x] 1.1 Scaffold Vue + TS project
-- [x] 1.2 Install dependencies
-- [x] 1.3 Vite configuration (tailwindcss plugin, /api proxy)
-- [x] 1.4 TypeScript configuration
-- [x] 1.5 Tailwind CSS 4 theme (fonts, color palette, dark mode)
-- [x] 1.6 Environment variables (.env, gitignored)
+- [x] 1.1 Scaffold Vue + TS project (`pnpm create vite` — the old ways still work)
+- [x] 1.2 Install dependencies (pnpm resolved the dependency tree before npm finished reading `package.json`)
+- [x] 1.3 Vite configuration (tailwindcss plugin, `/api` proxy to Express)
+- [x] 1.4 TypeScript configuration (tsconfig references because one tsconfig.json is never enough)
+- [x] 1.5 Tailwind CSS 4 theme (coffee & parchment palette, dark mode, custom fonts)
+- [x] 1.6 Environment variables (`.env` exists, is gitignored, doesn't need a dedicated YAML parser)
 
-## Phase 2: PostgreSQL Schema
-- [x] 2.1 Database schema (db/init.sql)
-- [x] 2.2 Binary content streaming RPC function
-- [x] 2.3 Default seed data (db/seed.sql)
+## Phase 2: Port the Backend (Express + SQLite)
+- [x] 2.1 Express 5 server with REST API routes
+- [x] 2.2 better-sqlite3 database with auto-schema on startup
+- [x] 2.3 Book filesystem scanner with caching (because rescanning 500 books on every request is for masochists)
+- [x] 2.4 Multer upload endpoint (512MB max, filetype whitelist, sanitized filenames)
+- [x] 2.5 Auth system (cookie-based, disabled by default, not Spring Security)
+- [x] 2.6 Calibre migration (CLI + API, reads metadata.db directly, no Calibre runtime needed)
 
-## Phase 3: Container Stack
-- [x] 3.1 Podman Compose (postgres + postgrest)
-- [x] 3.2 PostgREST config — skipped, env vars in compose suffice
-- [ ] 3.3 Verify stack runs and test binary streaming RPC
+### Deviations from (unwritten) plan
+- We kept SQLite instead of migrating to PostgreSQL. See the README's "Why not PostgreSQL?" section for the full rant.
+- We kept Express instead of PostgREST. Writing CRUD routes manually takes about 40 minutes and removes an entire container from the stack. Worth it.
+- The `pnpm migrate` CLI script reads Calibre's `metadata.db` directly and copies files to `books/`. This is simpler and doesn't require PostgreSQL to be running.
 
-### Deviations from plan
-- `db/seed.sql` mounted as `02-seed.sql` in initdb.d so default profile
-  is created automatically on first start (plan had seed run manually)
-- `postgrest.conf` omitted — compose env vars cover all settings
-
-## Phase 4: Calibre Import/Conversion Script
-- [x] 4.1 Migration script structure (scripts/migrate-calibre.ts)
-- [ ] 4.2 Test migration against local DB
-
-### Deviations from plan
-- Added `tsx` as dev dependency for running TypeScript scripts
-- Added `migrate` script to package.json (`pnpm migrate`)
-
-## Phase 5: Frontend - API Layer
-- [x] 5.1 PostgREST client (thin fetch wrapper)
-- [x] 5.2 Books API
-- [x] 5.3 Progress API
-- [x] 5.4 Profiles API
+## Phase 3: Frontend - API Layer
+- [x] 3.1 API client composable (`useApi` — thin fetch wrapper, no GraphQL, no tRPC, no OpenAPI codegen)
+- [x] 3.2 Books API composable (list, search, serve file)
+- [x] 3.3 Progress API composable (get by profile+book, upsert)
+- [x] 3.4 Profiles API composable (list, create)
+- [x] 3.5 Settings API composable (get, save, reset)
+- [x] 3.6 Auth API composable (login, logout, status check)
+- [x] 3.7 Export/Migration API composable (backup download, Calibre import)
 
 ### Deviations from plan
-- Added `upsert` method to PostgREST client using `Prefer: resolution=merge-duplicates`
-  for true insert-or-update (plan used PATCH which assumes row exists)
-- Progress API now uses `upsert` instead of `patch` for saving progress
-- Created `src/types/index.ts` with `Book`, `BookProgress`, `Profile` interfaces
+- Didn't need PostgREST client at all. The Express API exposes conventional REST endpoints. This is fine.
+- Added dedicated composable files per domain (`useBooksApi`, `useProgressApi`, etc.) instead of one monolithic `usePostgrest`. Single-responsibility principle, grandpa style.
 
-## Phase 6: Frontend - Pinia Stores
-- [x] 6.1 Books store
-- [x] 6.2 Profiles store
-- [x] 6.3 Progress store
+## Phase 4: Frontend - Pinia Stores
+- [x] 4.1 Books store (fetch, search, sort — all client-side because 500 books sorted on the server is a solved problem that doesn't need solving)
+- [x] 4.2 Profiles store (list, create, active profile persistence in localStorage)
+- [x] 4.3 Progress store (fetch per book, save with debounce, "currently reading" getter)
 
 ### Deviations from plan
-- **Client-side filtering/sorting**: The plan had server-side sort with client-side search, plus `setSearch/setSort/toggleOrder` calling `fetchBooks()` on every change. Stores now do fully client-side sorting and search — setters are local-only, the `filteredBooks` getter recomputes automatically. No unnecessary server roundtrips.
-- **`upsert` call fixed**: Plan passed 3 args (`upsert(profileId, bookId, data)`) but the actual API takes a single object. Corrected.
-- **`activeBookId` removed**: Was declared but unused in the plan. Stripped.
-- **Error handling added**: `fetchProfiles` now has `error` state + try/catch, matching `fetchBooks` pattern.
-- **`loadSavedProfile` integrated**: Replaced by `_restoreActiveProfile()` called at end of `fetchProfiles` — eliminates the coordination gap where `loadSavedProfile` might run before profiles are loaded.
+- No PostgREST client. Stores talk to Express endpoints via composable wrappers.
+- Progress debounce lives in `BookReader.vue` (750ms) rather than the store. The store is just a write-through cache — the component controls flush timing.
+- Added error states to all stores. Because networks fail, and pretending otherwise is for people who don't actually ship software.
 
-## Phase 7: Frontend - Components
-- [x] 7.1 BookCard.vue
-- [x] 7.2 SearchBar.vue
-- [x] 7.3 SortControls.vue
-- [x] 7.4 CurrentlyReading.vue
-- [x] 7.5 BookReader.vue
+## Phase 5: Frontend - Components
+- [x] 5.1 `BookCard.vue` — Grid card with title, author, format badge, size, progress bar
+- [x] 5.2 `SearchBar.vue` — v-model search input (no debounce — client-side filtering is instant. Go ahead, type fast.)
+- [x] 5.3 `SortControls.vue` — Sort by title/author/size/mtime, ascending/descending toggle
+- [x] 5.4 `CurrentlyReading.vue` — Active book widget with progress bar and continue/stop buttons
+- [x] 5.5 `BookReader.vue` — EPUB.js / pdfjs-dist / iframe renderer with progress restoration
 
 ### Deviations from plan
-- **SearchBar**: Dropped debounce and `search` emit. Client-side filtering is instant — `v-model` directly on `<input>` suffices, no server calls to throttle. The plan's dual emit + `:value` pattern would have made the input appear unresponsive.
-- **BookCard**: `progress` prop simplified from `{ percent: number } | null` to `number | undefined`. Parent passes `progressStore.forBook(id)?.percent`.
-- **SortControls**: Added `setOrder` action to books store for `v-model:order` binding.
-- **BookReader**: Fixed PDF rendering (added canvas generation for each page), fixed epubjs rendition types, added loading/error states, added `initialLocation`/`initialPercent` props for progress restoration, removed unused `containerWidth` state.
+- `BookCard` progress prop is `number | null | undefined` because JavaScript is what it is.
+- `SearchBar` doesn't debounce because client-side filtering is instant and adding a debounce to an instant operation is cargo-cult engineering.
+- `BookReader` generates canvas elements for each PDF page instead of using a single canvas with page swapping. It's more DOM nodes but simpler scroll-based position tracking.
+- Added proper loading, error, and empty states to everything. Because "it just works" means "it handles all states."
 
-## Phase 8: Frontend - Pages
-- [x] 8.1 Vue Router configuration
-- [x] 8.2 App.vue
-- [x] 8.3 LibraryPage.vue (Home)
-- [x] 8.4 ReaderPage.vue
-- [x] 8.5 SettingsPage.vue
-
-### Deviations from plan
-- **LibraryPage**: Added missing component imports (BookCard, SearchBar, SortControls). Fixed SearchBar to use only `v-model` (no `@search` emit — dropped in Phase 7). Fixed SortControls to use `v-model:sort` / `v-model:order` with `storeToRefs` refs (removed inline `($v: any)` handler). Fixed BookCard `:progress` to pass `?.percent` (number) instead of `BookProgress` object. Changed sequential `fetchProfiles().then(fetchBooks)` to parallel `Promise.all`.
-- **ReaderPage**: Added `error` state + `catch` block. Passes `initialLocation` and `initialPercent` props to BookReader for progress restoration. Moved `useProfilesStore()` to setup level. Removed dead `saveInterval` + empty `saveCurrentProgress()` (BookReader's debounced `progress` emit handles saving).
-- **SettingsPage**: Added `loading`/`error` states from profiles store. Added empty state if no profiles.
-- **App.vue**: Added `min-h-screen bg-parchment text-coffee` wrapper div. Kept PascalCase `RouterView` import.
-- **Router**: Uses `createWebHistory(import.meta.env.BASE_URL)` for Vite path compatibility.
-
-## Phase 9: Build & Deploy
-- [x] 9.1 Package.json scripts (added db:dev:up/down, db:prod:up/down)
-- [x] 9.2 Production build (pnpm build works, outputs dist/)
-- [x] 9.2a Multi-stage Dockerfile + compose.prod.yml + nginx.conf
-- [ ] 9.3 NixOS module (future — deferred until deployment needed)
+## Phase 6: Frontend - Pages
+- [x] 6.1 Vue Router configuration (3 routes: library, reader, settings)
+- [x] 6.2 `App.vue` — Root wrapper with `<RouterView>`
+- [x] 6.3 `LibraryPage.vue` (/) — Book grid with search, sort, progress indicators
+- [x] 6.4 `ReaderPage.vue` (`/read/:id`) — Full-screen reader with dark theme
+- [x] 6.5 `SettingsPage.vue` (`/settings`) — Profile management, Calibre migration UI
 
 ### Deviations from plan
-- **Build script**: Uses `run-p type-check "build-only"` (parallel) instead of sequential `vue-tsc && vite build`. Type-check runs in project-references mode (`vue-tsc --build`) — the plan's `--noEmit` doesn't work with tsconfig references.
-- **Additional scripts**: Added `lint`, `lint:oxlint`, `lint:eslint`, and `format` scripts for code quality (oxlint, eslint, oxfmt).
-- **Production container stack**: Added multi-stage `Dockerfile` (node build → nginx serve), `nginx.conf` (SPA routing + `/api` proxy to PostgREST), `compose.prod.yml` (postgres + postgrest + web on port 8080), and `.dockerignore`. The dev `compose.yml` remains for development with exposed ports.
-- **9.3 NixOS**: Deferred indefinitely — the current compose stack (Podman) is sufficient for development and testing. NixOS module can be added when production deployment is needed.
+- LibraryPage fetches profiles and books in parallel with `Promise.all`. Sequential fetching was for dial-up.
+- ReaderPage fetches book content as ArrayBuffer, creates a Blob URL. No streaming, no Range requests, no partial content negotiation. It's a book — the whole thing fits in memory.
+- SettingsPage has inline profile management (create, select, no delete because we're not monsters).
+- All pages have error states, loading states, and empty states. Yes, even the settings page.
+
+## Phase 7: Build & Deploy
+- [x] 7.1 Package.json scripts (`dev`, `build`, `lint`, `format`, `migrate`, `db:dev:up/down`)
+- [x] 7.2 Production build (`vite build` + `tsc -p server/`)
+- [x] 7.3 Multi-stage Dockerfile (build → runtime, node:22-alpine both stages)
+- [x] 7.4 Docker Compose (`compose.yml`, port 8080, named volumes)
+- [x] 7.5 Nginx config (for alternative deployment with PostgREST — not the default)
+
+### Deviations from plan
+- The "Vue port plan v2" specified PostgreSQL + PostgREST. Ignored. The Express + SQLite stack runs in a single container, has zero networking between services, and doesn't require a PhD in container orchestration to maintain.
+- No `compose.prod.yml` — the main `compose.yml` handles production. One file is enough.
+- Build uses `run-p type-check "build-only"` (parallel) because sequential builds are for people with more time than CPU cores.
+- Added `lint` and `format` scripts because writing clean code is a team sport even when the team is just you.
+- Added `migrate` script (`pnpm migrate --library /path/to/calibre/library`) for CLI-driven Calibre import.
+
+## Phase ∞: Things We Will Probably Never Do
+
+| Feature | Likelihood | Reasoning |
+|---------|-----------|-----------|
+| PostgreSQL support | Near zero | See "Why not PostgreSQL?" in the README |
+| OAuth/SSO integration | Near zero | It's a book reader for one person. Use a password. |
+| Kubernetes helm chart | Zero | If you're deploying a book reader to Kubernetes, you've lost the plot |
+| AI-powered recommendation engine | Negative | The app can't even recommend a book because *that's your job* |
+| EPUB annotation support | Low | epubjs supports it, but implementing annotation storage requires thought |
+| WASM-based reader for everything | Low | pdfjs-dist already handles PDFs and it's written in... not WASM |
+| Full-text search across books | Medium | Would require content extraction and indexing, but it would be genuinely useful |
+| Mobile app | Zero | It's a PWA-capable SPA. Add it to your home screen and move on with your life. |
+
+## Key Design Decisions (and the arguments we had with ourselves)
+
+### Why a single Express process instead of PostgREST?
+
+PostgREST is neat. It generates a REST API from your PostgreSQL schema. It also adds a container, a network hop, and an authentication layer to an app that needs none of those things. Express middleware takes about three lines to add CORS, JSON parsing, and auth checking. The whole API layer is ~250 lines of TypeScript vs. ~20 lines of PostgREST config + PostgreSQL setup. The Express version wins on simplicity because it removes an entire service.
+
+### Why SQLite instead of PostgreSQL?
+
+Asked and answered. But in short: five tables, one user, no concurrent writes. SQLite handles this workload with the enthusiasm of a golden retriever fetching a stick. PostgreSQL handles this workload with the solemn dignity of a mainframe operator who was told there's a slight breeze in the data center.
+
+### Why client-side search and sort?
+
+The entire book collection is ~500 entries. Fetching them all once (one network round trip) and filtering/sorting locally is faster than making the user wait for a server round trip on every keystroke. This stops being true at about 10,000 books. If you have 10,000 books in your personal library, congratulations — you don't need a better search algorithm, you need an intervention.
+
+## What's Next
+
+- ~~PostgreSQL + PostgREST port~~ — Nope. Scratch that. We built the thing that works.
+- NixOS module — Maybe. When someone actually needs to deploy this on NixOS, we'll write it. Until then, `podman compose up -d` is fine.
+- EPUB annotation support — Could happen. epubjs exposes annotation events. Just needs a data model and a UI.
+- Theming engine — Users keep asking for custom color schemes. Tailwind makes this trivial once we decide on the API.
+- Offline PWA support — `vite-plugin-pwa` would handle this. Low priority because we're never *not* on WiFi.
+
+---
+
+*The previous plan (vue-nuxt-port-plan-v2.md) specified PostgreSQL + PostgREST. It was aspirational. This is what we actually built. Aspirations are fine, but working software is better.*

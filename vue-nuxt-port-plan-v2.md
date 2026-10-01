@@ -1,5 +1,10 @@
 # JABR Vue Port - Revised Architecture Plan v2
 
+> ⚠️ **HISTORICAL REFERENCE ONLY** — This plan specified PostgreSQL + PostgREST.
+> **We did not build that.** We built Express + SQLite + Vue instead.
+> See [README.md](README.md) and [PROGRESS.md](PROGRESS.md) for the actual architecture.
+> This document exists so future archaeologists can study our abandoned ambitions.
+
 > Rebuilding JABR from SvelteKit to Vue 3 + Vite + PostgreSQL + PostgREST
 >
 > Principles: KISS, YAGNI, start minimal and grow
