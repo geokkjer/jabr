@@ -14,7 +14,13 @@ import {
   CONTENT_TYPES,
   MAX_FILENAME_LENGTH,
 } from '../config.js'
-import { searchBookIndex, getBookIndex } from '../db.js'
+import {
+  searchBookIndex,
+  getBookIndex,
+  listHiddenBookIndex,
+  hideBookIndex,
+  restoreBookIndex,
+} from '../db.js'
 import { scanAndIndex, ensureBooksDir, invalidateScanCache } from '../scanner.js'
 
 export const booksRouter = Router()
@@ -54,6 +60,26 @@ booksRouter.get('/search', async (req: Request, res: Response) => {
   } catch (e) {
     console.error('Failed to search books:', e)
     res.status(500).json({ error: 'Failed to search books' })
+  }
+})
+
+// GET /api/books/hidden (must be before /:id so "hidden" is not read as an id)
+booksRouter.get('/hidden', (_req: Request, res: Response) => {
+  try {
+    res.json(
+      listHiddenBookIndex().map((idx) => ({
+        id: idx.id,
+        title: idx.title,
+        author: idx.author,
+        path: idx.path,
+        format: idx.format as 'pdf' | 'epub' | 'txt' | 'md' | 'unknown',
+        size: idx.size,
+        mtime: new Date(idx.mtime),
+      })),
+    )
+  } catch (e) {
+    console.error('Failed to list hidden books:', e)
+    res.status(500).json({ error: 'Failed to list hidden books' })
   }
 })
 
@@ -127,6 +153,41 @@ bookFileRouter.get('/*splat', (req: Request, res: Response) => {
   } catch (e) {
     console.error('Failed to serve book:', e)
     res.status(500).json({ error: 'Failed to serve book' })
+  }
+})
+
+// ── Hide / restore ─────────────────────────────────────────────
+// Hiding only affects the library listing: the file stays on disk, a direct
+// link keeps working, and nothing is destroyed, so it is trivially reversible.
+
+booksRouter.delete('/:id', (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string
+    if (!hideBookIndex(id)) {
+      res.status(404).json({ error: 'Book not found' })
+      return
+    }
+    // The listing comes from the scanner's cache, so drop it
+    invalidateScanCache()
+    res.json({ ok: true, hidden: true })
+  } catch (e) {
+    console.error('Failed to hide book:', e)
+    res.status(500).json({ error: 'Failed to hide book' })
+  }
+})
+
+booksRouter.post('/:id/restore', (req: Request, res: Response) => {
+  try {
+    const id = req.params.id as string
+    if (!restoreBookIndex(id)) {
+      res.status(404).json({ error: 'Book not found' })
+      return
+    }
+    invalidateScanCache()
+    res.json({ ok: true, hidden: false })
+  } catch (e) {
+    console.error('Failed to restore book:', e)
+    res.status(500).json({ error: 'Failed to restore book' })
   }
 })
 

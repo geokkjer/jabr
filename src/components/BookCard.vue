@@ -7,7 +7,7 @@ interface Props {
 }
 
 defineProps<Props>()
-const emit = defineEmits<{ click: [book: Book]; read: [book: Book] }>()
+const emit = defineEmits<{ click: [book: Book]; read: [book: Book]; hide: [book: Book] }>()
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -18,6 +18,7 @@ function formatSize(bytes: number): string {
 
 <template>
   <div
+    data-book-card
     class="group relative block h-full bg-card border-4 border-coffee rounded-2xl p-6 transition-all duration-200 hover:-translate-y-1 hover:shadow-brutal-lg active:translate-y-0 active:shadow-none cursor-pointer"
     @click="emit('click', book)"
   >
@@ -40,10 +41,18 @@ function formatSize(bytes: number): string {
         </h2>
       </div>
 
-      <div class="border-t-2 border-coffee/20 pt-4">
+      <div class="border-t-2 border-coffee/20 pt-4 flex items-end justify-between gap-2">
         <p class="text-lg font-medium text-leather truncate">
           {{ book.author || 'Unknown Author' }}
         </p>
+        <button
+          class="shrink-0 text-xs font-bold text-leather/70 hover:text-clay transition-colors"
+          :title="`Hide from library — the file stays on disk`"
+          :aria-label="`Hide ${book.title} from the library`"
+          @click.stop="emit('hide', book)"
+        >
+          Hide
+        </button>
       </div>
     </div>
 

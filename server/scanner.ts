@@ -2,7 +2,7 @@ import { readdir, stat, mkdir } from 'node:fs/promises'
 import { existsSync, statSync } from 'node:fs'
 import { join, extname, relative, dirname } from 'node:path'
 import { getBooksDir, ALLOWED_EXTENSIONS_SET, BOOK_SCAN_CACHE_TTL_MS } from './config.js'
-import { upsertBookIndex, cleanupBookIndex } from './db.js'
+import { upsertBookIndex, cleanupBookIndex, getHiddenPaths } from './db.js'
 import type { BookIndex } from './db.js'
 
 export interface Book {
@@ -137,10 +137,17 @@ export async function scanAndIndex(): Promise<Book[]> {
     upsertBookIndex(bookIndex)
   }
 
+  // Cleanup must see every file on disk, hidden ones included: a hidden book
+  // that still exists must keep its row (and its hidden flag), otherwise the
+  // next scan would quietly un-hide it.
   cleanupBookIndex(books.map((b) => b.path))
 
-  scanCache = { result: books, timestamp: now }
-  return books
+  // Hiding is a library view, so filter here rather than in the SQL queries.
+  const hidden = getHiddenPaths()
+  const visible = books.filter((book) => !hidden.has(book.path))
+
+  scanCache = { result: visible, timestamp: now }
+  return visible
 }
 
 export function invalidateScanCache(): void {

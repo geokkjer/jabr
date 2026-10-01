@@ -113,6 +113,53 @@ export const useBooksStore = defineStore('books', () => {
     )
   }
 
+  /**
+   * Hide a book from the library. The file stays on disk and a direct link
+   * still works, so this is a curation action rather than a delete.
+   */
+  async function hideBook(id: string) {
+    await Effect.runPromise(
+      pipe(
+        BookApi.hide(id),
+        Effect.tap(() => {
+          books.value = books.value.filter((b) => b.id !== id)
+          return Effect.succeed(undefined)
+        }),
+        Effect.catchAll((err) => {
+          error.value = err.message
+          return Effect.fail(new Error(err.message))
+        }),
+      ),
+    )
+  }
+
+  async function fetchHiddenBooks(): Promise<Book[]> {
+    const result = await Effect.runPromise(
+      pipe(
+        BookApi.listHidden,
+        Effect.catchAll((err) => {
+          error.value = err.message
+          return Effect.succeed([] as Book[])
+        }),
+      ),
+    )
+    // Schema decoding yields readonly values; the store keeps mutable copies
+    return result.map((book) => ({ ...book })) as Book[]
+  }
+
+  async function restoreBook(id: string) {
+    await Effect.runPromise(
+      pipe(
+        BookApi.restore(id),
+        Effect.tap(() => Effect.promise(() => fetchBooks())),
+        Effect.catchAll((err) => {
+          error.value = err.message
+          return Effect.fail(new Error(err.message))
+        }),
+      ),
+    )
+  }
+
   return {
     // state
     books,
@@ -131,5 +178,8 @@ export const useBooksStore = defineStore('books', () => {
     setOrder,
     toggleOrder,
     uploadBook,
+    hideBook,
+    fetchHiddenBooks,
+    restoreBook,
   }
 })

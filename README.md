@@ -121,6 +121,9 @@ All endpoints live under `/api`. Every response is JSON unless it's a book file,
 | `GET` | `/api/books` | Scan filesystem and return indexed books with metadata |
 | `GET` | `/api/books/search?q=` | Search by title or author (case-insensitive, because we're not monsters) |
 | `GET` | `/api/books/:id` | Get a single book by ID |
+| `GET` | `/api/books/hidden` | List books hidden from the library |
+| `DELETE` | `/api/books/:id` | Hide a book from the library (file untouched) |
+| `POST` | `/api/books/:id/restore` | Put a hidden book back |
 | `GET` | `/api/book/*` | Serve a book file with the correct Content-Type |
 | `POST` | `/api/books/upload` | Upload a book (multipart form, max 512MB) |
 | `GET` | `/api/profiles` | List reading profiles |
@@ -258,6 +261,7 @@ If you need remote access, put it behind something that already knows how to do 
 What the app *does* handle on its own, because it costs nothing:
 
 - Book file paths are resolved and traversal-checked (`..` cannot escape the books directory).
+- Hiding is the only "removal" the app performs, and it is reversible: no endpoint deletes a book file.
 - Uploads are limited to the extension allowlist and sanitised filenames.
 - Text/markdown is rendered in a sandboxed iframe.
 - All SQL is parameterised.
@@ -269,7 +273,10 @@ Known rough edges if you ever *do* put this behind an authenticating proxy: `DEL
 These are decisions, not gaps waiting to be filled by a pull request you were about to send:
 
 - **Authentication.** Covered above. Use your network, not a login form.
-- **Deleting a book from the UI.** Delete the file from the books directory and it disappears from the library on the next scan. There is no button yet — if you import the wrong thing, remove the file.
+- **Deleting a book.** The app never touches your book files. Hide a book instead
+  (the *Hide* action on a card, or `DELETE /api/books/:id`) and it leaves the
+  library while the file stays where it is; restore it from Settings → *Hidden
+  books* whenever you like. To actually delete something, delete the file.
 - **A Calibre importer.** There was one. It was 400 lines of fragile `metadata.db` scraping; *Save to disk* with `{authors} - {title}` does the same job. See [Getting books in](#getting-books-in).
 - **Multi-user concurrency.** One SQLite writer, one container replica. Profiles separate reading positions, not load.
 - **Annotations, sync servers, recommendations.** Not planned. This reads books.

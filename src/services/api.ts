@@ -124,6 +124,25 @@ export const BookApi = {
 
   getContentUrl: (id: string) => `${BASE}/book/${encodeURIComponent(id)}`,
 
+  /** Books hidden from the library. Their files are still on disk. */
+  listHidden: pipe(
+    fetchJsonSafe(`${BASE}/books/hidden`),
+    Effect.flatMap(Schema.decodeUnknown(Schema.Array(BookSchema))),
+  ),
+
+  /** Hide a book from the library. Reversible; the file is not touched. */
+  hide: (id: string) =>
+    pipe(
+      mutateJson(`${BASE}/books/${encodeURIComponent(id)}`, "DELETE", {}),
+      Effect.as(undefined as void),
+    ),
+
+  restore: (id: string) =>
+    pipe(
+      mutateJson(`${BASE}/books/${encodeURIComponent(id)}/restore`, "POST", {}),
+      Effect.as(undefined as void),
+    ),
+
   /**
    * Import one or more files (or a whole folder selection) in a single
    * request. The multipart filename carries the relative path so a folder

@@ -18,6 +18,10 @@ import {
   upsertBookProgress,
   upsertBookIndex,
   listBookIndex,
+  listHiddenBookIndex,
+  getHiddenPaths,
+  hideBookIndex,
+  restoreBookIndex,
   searchBookIndex,
   getBookIndex,
   deleteBookIndex,
@@ -323,6 +327,78 @@ describe('BookIndex', () => {
     const books = listBookIndex()
     expect(books).toHaveLength(1)
     expect(books[0].id).toBe('keep.epub')
+  })
+})
+
+// ============================================================
+// Hiding — reversible "remove from library"
+// ============================================================
+describe('hiding books', () => {
+  function indexBook(id: string, title: string) {
+    upsertBookIndex({
+      id,
+      path: id,
+      title,
+      author: 'Author',
+      format: 'epub',
+      size: 10,
+      mtime: 1,
+      indexedAt: 1,
+    })
+  }
+
+  it('hides a book from the library list', () => {
+    indexBook('a.epub', 'Alpha')
+    indexBook('b.epub', 'Beta')
+
+    expect(hideBookIndex('a.epub')).toBe(true)
+
+    expect(listBookIndex().map((b) => b.id)).toEqual(['b.epub'])
+    expect(listHiddenBookIndex().map((b) => b.id)).toEqual(['a.epub'])
+    expect(getHiddenPaths().has('a.epub')).toBe(true)
+  })
+
+  it('restores a hidden book', () => {
+    indexBook('a.epub', 'Alpha')
+    hideBookIndex('a.epub')
+
+    expect(restoreBookIndex('a.epub')).toBe(true)
+
+    expect(listBookIndex().map((b) => b.id)).toEqual(['a.epub'])
+    expect(listHiddenBookIndex()).toEqual([])
+  })
+
+  it('reports unknown ids instead of pretending', () => {
+    expect(hideBookIndex('nope.epub')).toBe(false)
+    expect(restoreBookIndex('nope.epub')).toBe(false)
+  })
+
+  it('excludes hidden books from search', () => {
+    indexBook('a.epub', 'Findable')
+    indexBook('b.epub', 'Findable too')
+    hideBookIndex('a.epub')
+
+    expect(searchBookIndex('findable').map((b) => b.id)).toEqual(['b.epub'])
+  })
+
+  it('keeps the hidden flag across re-indexing, the way a rescan does', () => {
+    indexBook('a.epub', 'Alpha')
+    hideBookIndex('a.epub')
+
+    // A rescan upserts every file it finds, including hidden ones
+    indexBook('a.epub', 'Alpha')
+
+    expect(listBookIndex()).toEqual([])
+    expect(listHiddenBookIndex().map((b) => b.id)).toEqual(['a.epub'])
+  })
+
+  it('forgets a hidden book whose file really is gone', () => {
+    indexBook('a.epub', 'Alpha')
+    hideBookIndex('a.epub')
+
+    cleanupBookIndex([]) // nothing on disk any more
+
+    expect(listHiddenBookIndex()).toEqual([])
   })
 })
 

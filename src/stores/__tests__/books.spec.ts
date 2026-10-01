@@ -12,6 +12,7 @@ import type { Book } from '@/types'
 // BookApi.list is a module-level Effect value, so it needs a mutable holder.
 const holders = vi.hoisted(() => ({
   listEffect: undefined as unknown,
+  hiddenEffect: undefined as unknown,
 }))
 
 vi.mock('@/services/api', () => ({
@@ -19,10 +20,15 @@ vi.mock('@/services/api', () => ({
     get list() {
       return holders.listEffect
     },
+    get listHidden() {
+      return holders.hiddenEffect
+    },
     search: vi.fn<typeof BookApi.search>(),
     getById: vi.fn<typeof BookApi.getById>(),
     getContentUrl: vi.fn<typeof BookApi.getContentUrl>(),
     upload: vi.fn<typeof BookApi.upload>(),
+    hide: vi.fn<typeof BookApi.hide>(),
+    restore: vi.fn<typeof BookApi.restore>(),
   },
 }))
 
@@ -31,6 +37,8 @@ import type { UploadResult } from '@/services/api'
 import { useBooksStore } from '@/stores/books'
 
 const uploadMock = vi.mocked(BookApi.upload)
+const hideMock = vi.mocked(BookApi.hide)
+const restoreMock = vi.mocked(BookApi.restore)
 
 const uploadResult: UploadResult = {
   ok: true,
@@ -67,6 +75,9 @@ describe('useBooksStore', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     holders.listEffect = Effect.succeed(library)
+    holders.hiddenEffect = Effect.succeed([])
+    hideMock.mockReturnValue(Effect.succeed(undefined))
+    restoreMock.mockReturnValue(Effect.succeed(undefined))
     uploadMock.mockReturnValue(Effect.succeed(uploadResult))
   })
 
@@ -203,6 +214,49 @@ describe('useBooksStore', () => {
         store.uploadBook([new File(['x'], 'Big.epub')]),
       ).rejects.toThrow('File too large')
       expect(store.error).toBe('File too large')
+    })
+  })
+
+  describe('hiding books', () => {
+    it('removes the book from the library and calls the API', async () => {
+      const store = useBooksStore()
+      await store.fetchBooks()
+
+      await store.hideBook('b1')
+
+      expect(hideMock).toHaveBeenCalledWith('b1')
+      expect(store.books.map((b) => b.id)).toEqual(['b2', 'b3'])
+      expect(store.error).toBeNull()
+    })
+
+    it('keeps the book and reports the error when hiding fails', async () => {
+      hideMock.mockReturnValue(Effect.fail(new HttpError(500, 'disk on fire')))
+      const store = useBooksStore()
+      await store.fetchBooks()
+
+      await expect(store.hideBook('b1')).rejects.toThrow('disk on fire')
+
+      expect(store.books.map((b) => b.id)).toEqual(['b1', 'b2', 'b3'])
+      expect(store.error).toBe('disk on fire')
+    })
+
+    it('lists hidden books for the restore view', async () => {
+      holders.hiddenEffect = Effect.succeed([book({ id: 'hidden-1', title: 'Put Away' })])
+      const store = useBooksStore()
+
+      const hidden = await store.fetchHiddenBooks()
+
+      expect(hidden.map((b) => b.id)).toEqual(['hidden-1'])
+    })
+
+    it('restores a hidden book and refetches the library', async () => {
+      const store = useBooksStore()
+
+      await store.restoreBook('hidden-1')
+
+      expect(restoreMock).toHaveBeenCalledWith('hidden-1')
+      // fetchBooks ran as part of the restore
+      expect(store.books.map((b) => b.id)).toEqual(['b1', 'b2', 'b3'])
     })
   })
 })

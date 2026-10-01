@@ -1,16 +1,22 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useAdminStore } from '@/stores/admin'
+import { useBooksStore } from '@/stores/books'
 import { useProfilesStore } from '@/stores/profiles'
 import { storeToRefs } from 'pinia'
 import { AdminApi } from '@/services/api'
+import type { Book } from '@/types'
 import Logo from '@/components/Logo.vue'
 
 const adminStore = useAdminStore()
+const booksStore = useBooksStore()
 const profilesStore = useProfilesStore()
 
 const { error: adminError } = storeToRefs(adminStore)
 const { profiles, activeId, loading: profilesLoading } = storeToRefs(profilesStore)
+
+const hiddenBooks = ref<Book[]>([])
+const hiddenLoading = ref(true)
 
 const newProfileName = ref('')
 const editingId = ref('')
@@ -20,8 +26,23 @@ const message = ref('')
 const showResetConfirm = ref(false)
 
 onMounted(async () => {
-  await profilesStore.ensureDefaultProfile()
+  await Promise.all([profilesStore.ensureDefaultProfile(), loadHiddenBooks()])
 })
+
+async function loadHiddenBooks() {
+  hiddenLoading.value = true
+  try {
+    hiddenBooks.value = await booksStore.fetchHiddenBooks()
+  } finally {
+    hiddenLoading.value = false
+  }
+}
+
+async function restore(id: string) {
+  await booksStore.restoreBook(id)
+  await loadHiddenBooks()
+  showMessage('Book restored to the library.')
+}
 
 function startRename(id: string, currentName: string) {
   editingId.value = id
@@ -219,6 +240,40 @@ async function exportBackup() {
               Add Profile
             </button>
           </form>
+        </div>
+
+        <!-- Hidden books -->
+        <div class="border-t-2 border-coffee/10 pt-6">
+          <h2 class="text-xl font-bold text-coffee mb-4">Hidden Books</h2>
+          <p class="text-leather mb-4 italic">
+            Books hidden from the library. Their files were never touched — restore one and it
+            comes back, progress and all.
+          </p>
+
+          <div v-if="hiddenLoading" class="text-center py-4 text-sage">Loading...</div>
+
+          <div v-else-if="hiddenBooks.length === 0" class="text-center py-4 text-sage">
+            Nothing hidden.
+          </div>
+
+          <div v-else class="space-y-2">
+            <div
+              v-for="book in hiddenBooks"
+              :key="book.id"
+              class="flex items-center justify-between gap-3 p-3 rounded-xl bg-parchment border-2 border-coffee/10"
+            >
+              <div class="min-w-0">
+                <p class="font-bold text-coffee truncate">{{ book.title }}</p>
+                <p class="text-sm text-leather truncate">{{ book.author }} · {{ book.format }}</p>
+              </div>
+              <button
+                class="shrink-0 px-3 py-2 bg-forest text-parchment font-bold border-2 border-coffee rounded-lg hover:shadow-brutal transition-all"
+                @click="restore(book.id)"
+              >
+                Restore
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Backup -->

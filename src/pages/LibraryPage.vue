@@ -22,6 +22,23 @@ const { recentlyRead } = storeToRefs(progressStore)
 const uploadBusy = ref(false)
 const uploadSummary = ref<string | null>(null)
 const uploadFailures = ref<Array<{ path: string; reason: string }>>([])
+const libraryMessage = ref('')
+
+function showLibraryMessage(text: string) {
+  libraryMessage.value = text
+  setTimeout(() => (libraryMessage.value = ''), 6000)
+}
+
+async function hideBook(book: Book) {
+  try {
+    await booksStore.hideBook(book.id)
+    showLibraryMessage(
+      `Hidden “${book.title}”. Its file is untouched — restore it from Settings → Hidden books.`,
+    )
+  } catch (e: unknown) {
+    showLibraryMessage(e instanceof Error ? e.message : 'Could not hide that book.')
+  }
+}
 
 onMounted(async () => {
   // A fresh install has no profile; the server creates a starter one so
@@ -173,7 +190,13 @@ async function importFiles(ev: Event) {
         :book="book"
         :progress="progressStore.forBook(book.id)?.percent"
         @click="openBook"
+        @hide="hideBook"
       />
+    </div>
+
+    <!-- Library message (e.g. a book was hidden) -->
+    <div v-if="libraryMessage" class="mt-6">
+      <p class="text-sm font-bold text-forest">{{ libraryMessage }}</p>
     </div>
 
     <!-- Import summary -->

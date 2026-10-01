@@ -21,6 +21,7 @@
     "test:unit": "vitest",
     "e2e": "node e2e/live-test.mjs",
     "build-only": "vite build",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "type-check": "vue-tsc --build",
     "lint": "run-s lint:*",
     "lint:oxlint": "oxlint . --fix",

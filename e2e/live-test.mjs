@@ -163,12 +163,12 @@ try {
 
   // ── 1. Library ────────────────────────────────────────────────────────────
   await session.goto(BASE, 3000)
-  await session.waitFor(`document.querySelectorAll('div.grid > div').length > 0`)
+  await session.waitFor(`document.querySelectorAll('[data-book-card]').length > 0`)
 
   const library = await session.eval(`(() => {
     const text = document.body.innerText
     return {
-      cards: document.querySelectorAll('div.grid > div').length,
+      cards: document.querySelectorAll('[data-book-card]').length,
       hasMelville: /Herman Melville/.test(text),
       hasNested: /Geometry of Musical Rhythm/.test(text),
       hasUnknown: /Unknown/.test(text),
@@ -309,7 +309,36 @@ try {
     }
   }
 
-  // ── 5. Console cleanliness ────────────────────────────────────────────────
+  // ── 5. Library curation: hide, then restore ───────────────────────────────
+  await session.goto(BASE, 2500)
+  await session.waitFor(`document.querySelectorAll('[data-book-card]').length > 0`)
+
+  const beforeHide = await session.eval(`document.querySelectorAll('[data-book-card]').length`)
+  await session.eval(
+    `[...document.querySelectorAll('[data-book-card] button')].find(b => b.textContent.trim() === 'Hide')?.click()`,
+  )
+  await sleep(1500)
+
+  const afterHide = await session.eval(`document.querySelectorAll('[data-book-card]').length`)
+  check('hiding removes the book from the grid', afterHide === beforeHide - 1, `${beforeHide} → ${afterHide}`)
+
+  const hiddenList = await (await fetch(`${BASE}/api/books/hidden`)).json()
+  check('hidden book is offered for restore', hiddenList.length === 1, `${hiddenList.length} hidden`)
+
+  if (hiddenList[0]) {
+    // The file must still be on disk — verify it is still served
+    const stillServed = await fetch(
+      `${BASE}/api/book/${encodeURIComponent(hiddenList[0].path)}`,
+      { method: 'HEAD' },
+    )
+    check('hidden book file is untouched and still served', stillServed.ok, `HTTP ${stillServed.status}`)
+
+    await fetch(`${BASE}/api/books/${encodeURIComponent(hiddenList[0].id)}/restore`, { method: 'POST' })
+    const restored = await (await fetch(`${BASE}/api/books`)).json()
+    check('restore brings the book back', restored.length === beforeHide, `${restored.length} books`)
+  }
+
+  // ── 6. Console cleanliness ────────────────────────────────────────────────
   const noise = session.consoleErrors.filter((e) => !/favicon/i.test(e))
   check('no browser console errors', noise.length === 0, noise.slice(0, 3).join(' | '))
 } catch (err) {

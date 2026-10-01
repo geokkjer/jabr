@@ -4,6 +4,13 @@ Notable changes, newest first. This project follows [Semantic Versioning](https:
 
 ## Unreleased
 
+- **Hiding a book instead of deleting it.** *Hide* on any card removes it from
+  the library without touching the file; Settings → *Hidden books* restores it.
+  Reversible by design — the app never deletes your books.
+- Fixed `pnpm build-only` silently deleting the server bundle: Vite empties its
+  outDir, which took `dist/server/index.js` with it and left `pnpm start`
+  unable to find the entry point. Added `pnpm clean` for when you want dist gone.
+
 - **A fresh install starts with a reading profile called "Me"**, renameable in
   Settings, instead of silently failing to save progress until you created one
   by hand. `POST /api/profiles/default` is idempotent; `PATCH /api/profiles/:id`

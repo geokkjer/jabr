@@ -78,7 +78,10 @@ export function getDb(): Database.Database {
       size INTEGER NOT NULL,
       mtime INTEGER NOT NULL,
       indexed_at INTEGER NOT NULL,
-      identifiers TEXT
+      identifiers TEXT,
+      -- 1 = hidden from the library. The file stays on disk; hiding is a
+      -- curation action, not a delete, so it is fully reversible.
+      hidden INTEGER NOT NULL DEFAULT 0
     );
 
     CREATE INDEX IF NOT EXISTS idx_book_index_path ON book_index(path);
@@ -88,6 +91,13 @@ export function getDb(): Database.Database {
   `
 
   db.exec(schemaSQL)
+
+  // Databases created before hiding existed need the column added; CREATE TABLE
+  // IF NOT EXISTS does nothing for them.
+  const columns = db.prepare('PRAGMA table_info(book_index)').all() as Array<{ name: string }>
+  if (!columns.some((column) => column.name === 'hidden')) {
+    db.exec('ALTER TABLE book_index ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0')
+  }
   dbSingleton = db
   return db
 }
@@ -195,9 +205,40 @@ export function listBookIndex(): BookIndex[] {
   const db = getDb()
   return db
     .prepare(
-      'SELECT id, path, title, author, format, size, mtime, indexed_at as indexedAt, identifiers FROM book_index ORDER BY title ASC'
+      'SELECT id, path, title, author, format, size, mtime, indexed_at as indexedAt, identifiers FROM book_index WHERE hidden = 0 ORDER BY title ASC'
     )
     .all() as BookIndex[]
+}
+
+/** Books the reader has hidden from the library. Their files remain on disk. */
+export function listHiddenBookIndex(): BookIndex[] {
+  const db = getDb()
+  return db
+    .prepare(
+      'SELECT id, path, title, author, format, size, mtime, indexed_at as indexedAt, identifiers FROM book_index WHERE hidden = 1 ORDER BY title ASC'
+    )
+    .all() as BookIndex[]
+}
+
+/** Paths currently hidden, for the scanner to filter its results. */
+export function getHiddenPaths(): Set<string> {
+  const db = getDb()
+  const rows = db.prepare('SELECT path FROM book_index WHERE hidden = 1').all() as Array<{
+    path: string
+  }>
+  return new Set(rows.map((row) => row.path))
+}
+
+/** Hides a book from the library. Returns false when the id is unknown. */
+export function hideBookIndex(id: string): boolean {
+  const db = getDb()
+  return db.prepare('UPDATE book_index SET hidden = 1 WHERE id = ?').run(id).changes > 0
+}
+
+/** Puts a hidden book back in the library. Returns false when the id is unknown. */
+export function restoreBookIndex(id: string): boolean {
+  const db = getDb()
+  return db.prepare('UPDATE book_index SET hidden = 0 WHERE id = ?').run(id).changes > 0
 }
 
 export function searchBookIndex(query: string): BookIndex[] {
@@ -205,7 +246,7 @@ export function searchBookIndex(query: string): BookIndex[] {
   const searchQuery = `%${query.toLowerCase()}%`
   return db
     .prepare(
-      'SELECT id, path, title, author, format, size, mtime, indexed_at as indexedAt, identifiers FROM book_index WHERE LOWER(title) LIKE ? OR LOWER(author) LIKE ? ORDER BY title ASC'
+      'SELECT id, path, title, author, format, size, mtime, indexed_at as indexedAt, identifiers FROM book_index WHERE hidden = 0 AND (LOWER(title) LIKE ? OR LOWER(author) LIKE ?) ORDER BY title ASC'
     )
     .all(searchQuery, searchQuery) as BookIndex[]
 }

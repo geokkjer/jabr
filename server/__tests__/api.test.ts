@@ -179,6 +179,71 @@ describe('GET /api/book/*', () => {
 })
 
 // ============================================================
+// Hiding — DELETE /api/books/:id is reversible, the file stays
+// ============================================================
+describe('hiding books', () => {
+  const bookId = 'Test Author - Test Book.epub'
+
+  it('hides a book from the library without touching the file', async () => {
+    await api('/api/books')
+
+    const { status } = await api(`/api/books/${encodeURIComponent(bookId)}`, { method: 'DELETE' })
+    expect(status).toBe(200)
+
+    const { body: listed } = await api('/api/books')
+    expect((listed as Array<{ id: string }>).some((b) => b.id === bookId)).toBe(false)
+
+    const { body: hidden } = await api('/api/books/hidden')
+    expect((hidden as Array<{ id: string }>).some((b) => b.id === bookId)).toBe(true)
+
+    // The whole point: nothing was destroyed
+    expect(existsSync(join(tmpDir, bookId))).toBe(true)
+  })
+
+  it('stays hidden across a rescan', async () => {
+    await api('/api/books')
+    await api(`/api/books/${encodeURIComponent(bookId)}`, { method: 'DELETE' })
+
+    // Two more scans, the second after the cache TTL would have expired
+    await api('/api/books')
+    await api('/api/books')
+
+    const { body: listed } = await api('/api/books')
+    expect((listed as Array<{ id: string }>).some((b) => b.id === bookId)).toBe(false)
+    const { body: hidden } = await api('/api/books/hidden')
+    expect((hidden as Array<{ id: string }>).some((b) => b.id === bookId)).toBe(true)
+  })
+
+  it('excludes hidden books from search', async () => {
+    await api('/api/books')
+    await api(`/api/books/${encodeURIComponent(bookId)}`, { method: 'DELETE' })
+
+    const { body } = await api('/api/books/search?q=test')
+    expect((body as Array<{ id: string }>).some((b) => b.id === bookId)).toBe(false)
+  })
+
+  it('restores a hidden book to the library', async () => {
+    await api('/api/books')
+    await api(`/api/books/${encodeURIComponent(bookId)}`, { method: 'DELETE' })
+
+    const { status } = await api(`/api/books/${encodeURIComponent(bookId)}/restore`, {
+      method: 'POST',
+    })
+    expect(status).toBe(200)
+
+    const { body: listed } = await api('/api/books')
+    expect((listed as Array<{ id: string }>).some((b) => b.id === bookId)).toBe(true)
+    const { body: hidden } = await api('/api/books/hidden')
+    expect(hidden as Array<unknown>).toHaveLength(0)
+  })
+
+  it('reports 404 for an unknown book', async () => {
+    const { status } = await api('/api/books/does-not-exist.epub', { method: 'DELETE' })
+    expect(status).toBe(404)
+  })
+})
+
+// ============================================================
 // Upload — covers UploadBook rule (POST /api/books/upload, field `files`)
 // ============================================================
 interface UploadEntry {

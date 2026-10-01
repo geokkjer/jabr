@@ -21,4 +21,12 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    // The server bundle lives in dist/server and is emitted by esbuild, not
+    // Vite. Vite empties its outDir by default, so a client-only build
+    // (`pnpm build-only`) would silently delete the server entry point and
+    // leave `node dist/server/index.js` unable to start. `pnpm build` runs
+    // the client first, which only masks this.
+    emptyOutDir: false,
+  },
 })
