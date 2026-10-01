@@ -2,22 +2,50 @@
 
 Notable changes, newest first. This project follows [Semantic Versioning](https://semver.org/).
 
-## Unreleased
+## 0.1.0-beta.2
 
-- **Hiding a book instead of deleting it.** *Hide* on any card removes it from
-  the library without touching the file; Settings → *Hidden books* restores it.
-  Reversible by design — the app never deletes your books.
-- Fixed `pnpm build-only` silently deleting the server bundle: Vite empties its
-  outDir, which took `dist/server/index.js` with it and left `pnpm start`
-  unable to find the entry point. Added `pnpm clean` for when you want dist gone.
+Everything in beta.1 plus the fixes below. If you are running beta.1, upgrade —
+its container image predates the starter profile, so reading progress went
+nowhere until you created a profile by hand.
+
+### Added
 
 - **A fresh install starts with a reading profile called "Me"**, renameable in
-  Settings, instead of silently failing to save progress until you created one
-  by hand. `POST /api/profiles/default` is idempotent; `PATCH /api/profiles/:id`
-  renames.
-- Fixed the Kubernetes backup CronJob: the script was mounted outside `/app`,
-  so `require('better-sqlite3')` could not resolve and the job failed. Found by
-  applying the manifests to a live cluster.
+  Settings (or via `PATCH /api/profiles/:id`) instead of silently discarding
+  progress until you created one yourself. `POST /api/profiles/default` is
+  idempotent, so it is safe to call on every load.
+- **Hiding a book instead of deleting it.** *Hide* on any card removes it from
+  the library without touching the file, and Settings → *Hidden books* restores
+  it. The app never deletes your books.
+
+### Fixed
+
+- **Kubernetes backup CronJob failed outright.** The script was mounted at
+  `/scripts`, so `require('better-sqlite3')` walked up from the wrong directory
+  and the job died with `MODULE_NOT_FOUND`. Found by applying the manifests to a
+  live cluster; verified afterwards with an in-cluster `integrity_check` on the
+  dump.
+- **Absent reading progress returned 404**, logging a console error on the first
+  read of every book. It is a normal state, so the endpoint now answers `null`.
+- **Opening a book by direct URL never loaded profiles**, so progress was
+  silently neither restored nor saved for deep links, bookmarks and reloads.
+- **`pnpm build-only` deleted the server bundle.** Vite empties its `outDir`,
+  which took `dist/server/index.js` with it and left `pnpm start` unable to find
+  its entry point. `emptyOutDir` is now off, and `pnpm clean` exists for when you
+  do want `dist/` gone.
+- **Text and Markdown are rendered in a sandboxed iframe**, and PDF/EPUB readers
+  now tear down their observers and listeners when unmounted.
+
+### Deployment notes
+
+- The container runs as uid 1000, needs a writable `/app/data`, and works with a
+  read-only root filesystem.
+- **Put the `data` volume on block or local storage, not NFS.** SQLite in WAL
+  mode needs shared memory and working POSIX locks; network filesystems provide
+  neither reliably, which risks corruption. The `books` volume is read-mostly
+  and is fine on RWX NFS.
+- Verified on Talos v1.14.2 / Kubernetes v1.37: rollout, PVC binding, security
+  context, probes, the backup job, and the browser suite end to end.
 
 ## 0.1.0-beta.1
 

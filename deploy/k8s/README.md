@@ -17,8 +17,8 @@ The cluster needs to be able to pull the image. Build it the same way as any
 other deployment (`--format docker`, or the `HEALTHCHECK` is dropped):
 
 ```sh
-podman build --format docker -t ghcr.io/geokkjer/jabr:0.1.0-beta.1 .
-podman push ghcr.io/geokkjer/jabr:0.1.0-beta.1
+podman build --format docker -t ghcr.io/geokkjer/jabr:0.1.0-beta.2 .
+podman push ghcr.io/geokkjer/jabr:0.1.0-beta.2
 ```
 
 Pushing to GHCR needs a token with `write:packages`. For a private registry,
@@ -35,7 +35,7 @@ Edit `kustomization.yaml` (`images.newTag`), or override at apply time:
 
 ```sh
 kubectl apply -k deploy/k8s
-kubectl -n jabr set image deployment/jabr jabr=ghcr.io/geokkjer/jabr:0.1.0-beta.1
+kubectl -n jabr set image deployment/jabr jabr=ghcr.io/geokkjer/jabr:0.1.0-beta.2
 ```
 
 ## 3. Apply

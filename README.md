@@ -4,7 +4,7 @@
 
 A self-hosted e-book reader that lives in your browser. Drop files in a directory, read them from anywhere. Supports EPUB, PDF, and plain text.
 
-> **Status: beta (`0.1.0-beta.1`).** It does what the README says, on a trusted
+> **Status: beta (`0.1.0-beta.2`).** It does what the README says, on a trusted
 > network, and nothing more. There is no authentication and no delete button —
 > see [Deliberately missing](#deliberately-missing) and the
 > [changelog](CHANGELOG.md) before you point it at anything you care about.
