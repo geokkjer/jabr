@@ -147,31 +147,60 @@ pnpm dev              # frontend + backend with hot reload
 pnpm build            # type-check + build both
 pnpm lint             # eslint + oxlint (double the pain, half the bugs)
 pnpm format           # oxfmt (formats your code and judges your spacing choices)
-pnpm test:unit        # vitest (for when you're feeling responsible)
+pnpm test             # client + server suites, once
+pnpm test:client      # vitest in jsdom (stores, utils, invariants)
+pnpm test:server      # vitest in node, in-memory SQLite (db, scanner, API)
+pnpm test:unit        # vitest in watch mode (for when you're feeling responsible)
 ```
+
+### Testing notes
+
+Two vitest configs exist on purpose:
+
+- `vitest.config.ts` — jsdom, `src/**/__tests__/*` only.
+- `vitest.server.config.ts` — node env, `server/**/__tests__/*`, with `JABR_DB_PATH=:memory:` and `NODE_ENV=test`.
+
+Server tests must **never** be run under the client config: they call `resetDatabase()` in `beforeEach` and would wipe the real `data/jabr.sqlite3`. The `server/**` exclusion in the client config is load-bearing.
+
+### Troubleshooting
+
+**`ENOSPC: System limit for number of file watchers reached`** on `pnpm dev`
+
+Your system has run out of inotify watches (VSCode, browsers and assorted desktop services are usually the culprits — check with `sysctl fs.inotify.max_user_watches` versus the sum of `inotify` entries in `/proc/*/fdinfo/*`). Raise the limit:
+
+```sh
+echo 'fs.inotify.max_user_watches=1048576' | sudo tee /etc/sysctl.d/99-inotify.conf
+sudo sysctl --system
+```
+
+Nothing is wrong with the project when this happens — `tsx watch` and `vite` simply cannot register a single additional watch.
+
 
 **Project layout** (because every good project has one, and yours should too):
 
 ```
 jabr/
 ├── server/          # Express API (TypeScript, compiled with tsc)
-│   ├── index.ts     # Routes, middleware, server entry
+│   ├── index.ts     # App wiring and server entry
+│   ├── routes/      # health, books, profiles, progress, settings, auth
 │   ├── db.ts        # SQLite init, queries, everything data
 │   ├── config.ts    # Constants, env vars, path resolvers
 │   ├── scanner.ts   # Filesystem scanning + book indexing
 │   ├── migrate.ts   # Calibre migration logic
-│   └── tsconfig.json
+│   └── __tests__/   # node-env vitest suites (see vitest.server.config.ts)
 ├── src/             # Vue SPA (`.vue` SFCs, compiled with vue-tsc + vite)
 │   ├── main.ts      # Vue entry point
 │   ├── App.vue      # Root component
 │   ├── router/      # Vue Router config (3 routes)
-│   ├── stores/      # Pinia: books, profiles, progress
-│   ├── composables/ # API client wrappers
-│   ├── components/  # BookCard, SearchBar, SortControls, BookReader...
-│   ├── pages/       # Library, Reader, Settings
+│   ├── stores/      # Pinia setup stores: books, profiles, progress, settings, auth
+│   ├── services/    # Effect-TS HTTP client + typed API services
+│   ├── components/  # BookCard, SearchBar, BookReader + readers/{Epub,Pdf,Text}
+│   ├── pages/       # Library, Reader, Settings, Login
 │   ├── styles/      # Tailwind CSS 4 + custom theme
-│   └── types/       # TypeScript interfaces
+│   ├── types/       # TypeScript interfaces
+│   └── __tests__/   # jsdom vitest suites (stores, invariants, format)
 ├── scripts/         # CLI helpers (migrate-calibre.ts)
+├── jabr.allium      # Behavioural specification the tests are derived from
 ├── compose.yml      # Podman/Docker Compose for production
 ├── Dockerfile       # Multi-stage build
 ├── nginx.conf       # For the compose.prod.yml (if you go that route)

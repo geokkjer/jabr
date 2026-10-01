@@ -12,6 +12,9 @@
     "build:server": "tsc -p server/tsconfig.json",
     "preview": "vite preview",
     "start": "node dist/server/index.js",
+    "test": "run-s test:client test:server",
+    "test:client": "vitest run",
+    "test:server": "vitest run --config vitest.server.config.ts",
     "test:unit": "vitest",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
@@ -65,12 +68,6 @@
     "vite-plugin-vue-devtools": "^8.2.1",
     "vitest": "^4.1.11",
     "vue-tsc": "^3.3.11"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "esbuild",
-      "better-sqlite3"
-    ]
   },
   "engines": {
     "node": "^20.19.0 || >=22.12.0"

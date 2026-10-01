@@ -44,3 +44,7 @@ __screenshots__/
 # Runtime data
 data/
 books/
+
+# Stray artifacts from test misconfiguration
+:memory:*
+test-fixtures/
