@@ -46,7 +46,7 @@ spec:
 
       containers:
         - name: jabr
-          image: ghcr.io/geokkjer/jabr:latest
+          image: ghcr.io/geokkjer/jabr:0.1.0-beta.1
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

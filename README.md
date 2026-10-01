@@ -4,6 +4,11 @@
 
 A self-hosted e-book reader that lives in your browser. Drop files in a directory, read them from anywhere. Supports EPUB, PDF, and plain text.
 
+> **Status: beta (`0.1.0-beta.1`).** It does what the README says, on a trusted
+> network, and nothing more. There is no authentication and no delete button —
+> see [Deliberately missing](#deliberately-missing) and the
+> [changelog](CHANGELOG.md) before you point it at anything you care about.
+
 We wrote this so we could read our books without handing our soul to Amazon, Google, or some VC-backed startup that will raise prices in six months. You know the drill.
 
 ## Architecture
@@ -254,6 +259,16 @@ What the app *does* handle on its own, because it costs nothing:
 - All SQL is parameterised.
 
 Known rough edges if you ever *do* put this behind an authenticating proxy: `DELETE /api/admin/data` resets the database with dynamic table names (whitelisted in code, but refactor before trusting it), and `GET /api/admin/export` returns a full backup of profiles and progress — so gate state-modifying endpoints at the proxy.
+
+## Deliberately missing
+
+These are decisions, not gaps waiting to be filled by a pull request you were about to send:
+
+- **Authentication.** Covered above. Use your network, not a login form.
+- **Deleting a book from the UI.** Delete the file from the books directory and it disappears from the library on the next scan. There is no button yet — if you import the wrong thing, remove the file.
+- **A Calibre importer.** There was one. It was 400 lines of fragile `metadata.db` scraping; *Save to disk* with `{authors} - {title}` does the same job. See [Getting books in](#getting-books-in).
+- **Multi-user concurrency.** One SQLite writer, one container replica. Profiles separate reading positions, not load.
+- **Annotations, sync servers, recommendations.** Not planned. This reads books.
 
 ## Why not PostgreSQL?
 

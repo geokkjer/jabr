@@ -19,7 +19,7 @@ resources:
 
 images:
   - name: ghcr.io/geokkjer/jabr
-    newTag: latest
+    newTag: 0.1.0-beta.1
 
 # Optional overrides, e.g.:
 #   - a different StorageClass
