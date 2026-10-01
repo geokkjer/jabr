@@ -146,6 +146,7 @@ pnpm test             # client + server suites, once
 pnpm test:client      # vitest in jsdom (stores, utils, invariants)
 pnpm test:server      # vitest in node, in-memory SQLite (db, scanner, API)
 pnpm test:unit        # vitest in watch mode (for when you're feeling responsible)
+pnpm e2e              # live browser test against a running instance (see below)
 ```
 
 ### Testing notes
@@ -156,6 +157,20 @@ Two vitest configs exist on purpose:
 - `vitest.server.config.ts` — node env, `server/**/__tests__/*`, with `JABR_DB_PATH=:memory:` and `NODE_ENV=test`.
 
 Server tests must **never** be run under the client config: they call `resetDatabase()` in `beforeEach` and would wipe the real `data/jabr.sqlite3`. The `server/**` exclusion in the client config is load-bearing.
+
+### Live browser test
+
+`pnpm e2e` drives headless Chromium over the DevTools protocol (no Playwright or
+Puppeteer to install) against a running server. It checks that real EPUB and PDF
+files actually *render* — epub.js chapter text inside its iframe, pdf.js pixels on
+a canvas, lazy rendering and page tracking while scrolling — and that reading
+progress round-trips through the API. Screenshots land in `/tmp/jabr-live/shots`.
+
+```sh
+JABR_BOOKS_PATH=/path/to/books JABR_DB_PATH=/tmp/jabr.sqlite3 NODE_ENV=production \
+  node dist/server/index.js &
+JABR_URL=http://127.0.0.1:3001 pnpm e2e
+```
 
 ### Troubleshooting
 

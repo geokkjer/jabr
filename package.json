@@ -19,6 +19,7 @@
     "test:client": "vitest run",
     "test:server": "vitest run --config vitest.server.config.ts",
     "test:unit": "vitest",
+    "e2e": "node e2e/live-test.mjs",
     "build-only": "vite build",
     "type-check": "vue-tsc --build",
     "lint": "run-s lint:*",
