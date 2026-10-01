@@ -3,9 +3,11 @@
 
 -- Scope: JABR self-hosted e-book reader
 -- Includes: Book library management, reading with progress tracking,
---           reader profiles, optional authentication, Calibre onboarding,
---           settings configuration
+--           reader profiles, Calibre onboarding, settings configuration
 -- Excludes:
+--   - Authentication/authorisation (out of scope by decision: JABR runs on a
+--     trusted internal network and is never exposed to the internet; reader
+--     profiles separate reading state, they are not a security boundary)
 --   - Data export (infrastructure, black box)
 --   - EPUB/PDF rendering internals (implementation)
 --   - Database or filesystem storage (implementation)
@@ -15,14 +17,13 @@
 config {
     max_upload_size: Bytes = 512.MB
     allowed_formats: Set<String> = {"pdf", "epub", "txt", "md"}
-    session_duration: Duration = 7.days
-    default_username: String = "admin"
-    default_password: String = "admin"
 }
 
 
 actor Reader {
-    identified_by cookie: SessionCookie within: null
+    -- No session or identity: every request is trusted. Profiles are a
+    -- reading-state selector, not an authentication mechanism.
+    identified_by: none
 }
 
 
@@ -55,10 +56,9 @@ entity ReadingProgress {
 
 entity AppSettings {
     library_path: String?
-    auth_enabled: Boolean
-    username: String
-    password: String
     reader_target: String?
+    calibre_migrated: Boolean
+    calibre_library_path: String?
 }
 
 external entity CalibreLibrary {
@@ -138,26 +138,6 @@ rule RestoreReadingProgress {
     ensures: reader sees book content at last saved position
 }
 
-rule Login {
-    when: ReaderLogsIn(viewer, credentials)
-
-    requires: AppSettings.auth_enabled = true
-
-    let expected_user = AppSettings.username ?? config.default_username
-    let expected_pass = AppSettings.password ?? config.default_password
-
-    ensures: viewer is authenticated
-        when credentials.username = expected_user and credentials.password = expected_pass
-    ensures: viewer is not authenticated
-        when credentials.username != expected_user or credentials.password != expected_pass
-}
-
-rule Logout {
-    when: ReaderLogsOut(viewer)
-
-    ensures: viewer is not authenticated
-}
-
 rule MigrateFromCalibre {
     when: ReaderMigratesCalibre(viewer, calibre_path, options)
 
@@ -203,12 +183,6 @@ rule SelectActiveProfile {
     ensures: active_profile for viewer = profile
 }
 
-rule ToggleAuthentication {
-    when: ReaderTogglesAuth(viewer, enabled)
-
-    ensures: AppSettings.auth_enabled = enabled
-}
-
 
 -- ============================================================
 -- Surfaces
@@ -219,7 +193,6 @@ surface LibraryDashboard {
 
     provides:
         ViewLibrary()
-            when viewer is authenticated or AppSettings.auth_enabled = false
 
     exposes:
         each book in library:
@@ -232,14 +205,10 @@ surface LibraryDashboard {
     provides:
         SearchBooks(query: String)
             returns books where title or author matches query
-            when viewer is authenticated or AppSettings.auth_enabled = false
 
         UploadBook(file)
-            when viewer is authenticated or AppSettings.auth_enabled = false
         CreateProfile(name)
-            when viewer is authenticated or AppSettings.auth_enabled = false
         SelectActiveProfile(profile_id)
-            when viewer is authenticated or AppSettings.auth_enabled = false
 
     related:
         BookReader(book) when book selected
@@ -258,7 +227,6 @@ surface BookReader {
     provides:
         OpenBook(book)
             when book is in library
-            when viewer is authenticated or AppSettings.auth_enabled = false
 
     exposes:
         book.title
@@ -279,7 +247,6 @@ surface SettingsDashboard {
 
     provides:
         ViewSettings()
-            when viewer is authenticated or AppSettings.auth_enabled = false
 
     exposes:
         AppSettings values
@@ -288,29 +255,11 @@ surface SettingsDashboard {
 
     provides:
         UpdateSettings(changes)
-            when viewer is authenticated or AppSettings.auth_enabled = false
         MigrateFromCalibre(path, options)
-            when viewer is authenticated or AppSettings.auth_enabled = false
-        ToggleAuthentication(enabled)
-            when viewer is authenticated or AppSettings.auth_enabled = false
         ResetDatabase()
-            when viewer is authenticated or AppSettings.auth_enabled = false
 
     related:
         LibraryDashboard()
-}
-
-surface LoginPage {
-    facing viewer: Reader
-
-    provides:
-        Login(credentials)
-            when AppSettings.auth_enabled = true
-        Logout()
-            when viewer is authenticated
-
-    related:
-        LibraryDashboard() when login succeeds
 }
 
 surface CalibreMigrationWizard {
@@ -347,12 +296,6 @@ surface CalibreMigrationWizard {
 invariant NoDuplicateBookPaths {
     for book in Book:
         book.path is unique
-}
-
-invariant AuthGatesAccess {
-    for viewer in Reader:
-        if AppSettings.auth_enabled = true:
-            viewer must be authenticated to access library, reader, or settings
 }
 
 invariant ProgressBelongsToKnownProfile {

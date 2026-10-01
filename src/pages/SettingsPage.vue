@@ -12,9 +12,6 @@ const { settings, error: settingsError } = storeToRefs(settingsStore)
 const { profiles, activeId, loading: profilesLoading } = storeToRefs(profilesStore)
 
 const libraryPath = ref('')
-const authEnabled = ref(false)
-const username = ref('')
-const password = ref('')
 const newProfileName = ref('')
 const busy = ref(false)
 const resetBusy = ref(false)
@@ -44,9 +41,6 @@ onMounted(async () => {
 
   libraryPath.value = settings.value.libraryPath || ''
   calibreLibPath.value = settings.value.calibreLibraryPath || ''
-  authEnabled.value = settings.value.authEnabled === 'true'
-  username.value = settings.value.username || ''
-  password.value = settings.value.password || ''
 })
 
 async function dryRunMigrate() {
@@ -104,9 +98,6 @@ async function saveSettings() {
   try {
     await settingsStore.saveSettings({
       libraryPath: libraryPath.value,
-      authEnabled: authEnabled.value.toString(),
-      username: username.value,
-      password: password.value,
     })
     showMessage('Settings saved successfully.')
   } catch (e: unknown) {
@@ -189,35 +180,6 @@ async function exportBackup() {
             placeholder="/path/to/your/books"
             class="w-full px-4 py-3 bg-parchment text-coffee font-bold placeholder-leather/70 border-2 border-coffee rounded-xl focus:outline-none"
           />
-        </div>
-
-        <!-- Auth -->
-        <div class="border-t-2 border-coffee/10 pt-6">
-          <label class="flex items-center gap-3 cursor-pointer mb-4">
-            <input v-model="authEnabled" type="checkbox" class="w-6 h-6 accent-forest" />
-            <span class="text-xl font-bold text-coffee">Enable Login Page</span>
-          </label>
-
-          <div v-if="authEnabled" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label for="username" class="block text-sm font-bold text-coffee mb-2">Username</label>
-              <input
-                id="username"
-                v-model="username"
-                type="text"
-                class="w-full px-4 py-3 bg-parchment text-coffee font-bold border-2 border-coffee rounded-xl focus:outline-none"
-              />
-            </div>
-            <div>
-              <label for="password" class="block text-sm font-bold text-coffee mb-2">Password</label>
-              <input
-                id="password"
-                v-model="password"
-                type="password"
-                class="w-full px-4 py-3 bg-parchment text-coffee font-bold border-2 border-coffee rounded-xl focus:outline-none"
-              />
-            </div>
-          </div>
         </div>
 
         <!-- Profiles -->

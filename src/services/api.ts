@@ -37,9 +37,6 @@ const ProfileSchema = Schema.Struct({
 })
 
 const SettingsSchema = Schema.Struct({
-  authEnabled: Schema.NullOr(Schema.String),
-  username: Schema.NullOr(Schema.String),
-  password: Schema.NullOr(Schema.String),
   libraryPath: Schema.NullOr(Schema.String),
   readerTarget: Schema.NullOr(Schema.String),
   calibreMigrated: Schema.NullOr(Schema.String),
@@ -65,7 +62,6 @@ const MigrateResultSchema = Schema.Struct({
 })
 
 const OkSchema = Schema.Struct({ ok: Schema.Boolean })
-const AuthStatusSchema = Schema.Struct({ authEnabled: Schema.Boolean })
 
 // ── Book API ───────────────────────────────────────────────────
 
@@ -205,29 +201,5 @@ export const MigrationApi = {
     pipe(
       mutateJson(`${BASE}/settings/migrate`, "POST", options),
       Effect.flatMap(Schema.decodeUnknown(MigrateResultSchema)),
-    ),
-}
-
-// ── Auth API ───────────────────────────────────────────────────
-
-export const AuthApi = {
-  login: (username: string, password: string) =>
-    pipe(
-      mutateJson(`${BASE}/login`, "POST", { username, password }),
-      Effect.flatMap(Schema.decodeUnknown(OkSchema)),
-      Effect.as(undefined as void),
-    ),
-
-  logout: () =>
-    pipe(
-      mutateJson(`${BASE}/login`, "DELETE", {}),
-      Effect.flatMap(Schema.decodeUnknown(OkSchema)),
-      Effect.as(undefined as void),
-    ),
-
-  status: () =>
-    pipe(
-      fetchJsonSafe(`${BASE}/login/status`),
-      Effect.flatMap(Schema.decodeUnknown(AuthStatusSchema)),
     ),
 }

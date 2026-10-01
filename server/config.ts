@@ -45,9 +45,6 @@ export const CONTENT_TYPES: Record<string, string> = {
   '.md': 'text/markdown',
 }
 
-export const AUTH_COOKIE_NAME = 'jabr_auth'
-export const AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 7 // 1 week
-
 export const SAFE_FILENAME_PATTERN = /[^a-zA-Z0-9._ -]+/g
 export const MAX_FILENAME_LENGTH = 255
 

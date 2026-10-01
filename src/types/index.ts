@@ -23,12 +23,6 @@ export interface Profile {
   createdAt: number
 }
 
-export interface AuthSettings {
-  authEnabled: string | null
-  username: string | null
-  password: string | null
-}
-
 export interface LibrarySettings {
   libraryPath: string | null
   readerTarget: string | null
@@ -39,7 +33,7 @@ export interface MigrationSettings {
   calibreLibraryPath: string | null
 }
 
-export interface Settings extends AuthSettings, LibrarySettings, MigrationSettings {}
+export interface Settings extends LibrarySettings, MigrationSettings {}
 
 export interface MigrateResult {
   dryRun: boolean

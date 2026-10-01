@@ -6,9 +6,6 @@ import type { Settings, MigrateResult } from '@/types'
 
 const defaultSettings: Settings = {
   libraryPath: null,
-  authEnabled: null,
-  username: null,
-  password: null,
   readerTarget: null,
   calibreMigrated: null,
   calibreLibraryPath: null,

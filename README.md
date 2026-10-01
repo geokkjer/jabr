@@ -119,15 +119,13 @@ All endpoints live under `/api`. Every response is JSON unless it's a book file,
 | `GET` | `/api/profiles` | List reading profiles |
 | `POST` | `/api/profiles` | Create a profile (body: `{ "name": "string" }`) |
 | `GET` | `/api/progress/:bookId?profileId=` | Get reading progress for a book+profile combo |
+| `GET` | `/api/progress?profileId=` | Recent progress for a profile ("currently reading") |
 | `PUT` | `/api/progress/:bookId` | Save reading progress (upserts, because race conditions are for other people) |
 | `GET` | `/api/settings` | Get all settings |
 | `POST` | `/api/settings` | Save one or more settings |
 | `DELETE` | `/api/settings` | Reset the database (irreversible — yes, we warned you) |
 | `GET` | `/api/settings/export` | Download a JSON backup of profiles, progress, and settings |
 | `POST` | `/api/settings/migrate` | Import from a Calibre library |
-| `POST` | `/api/login` | Authenticate (if auth is enabled) |
-| `DELETE` | `/api/login` | Deauthenticate |
-| `GET` | `/api/login/status` | Check whether auth is even configured |
 
 ## Calibre Migration
 
@@ -182,7 +180,7 @@ Nothing is wrong with the project when this happens — `tsx watch` and `vite` s
 jabr/
 ├── server/          # Express API (TypeScript, compiled with tsc)
 │   ├── index.ts     # App wiring and server entry
-│   ├── routes/      # health, books, profiles, progress, settings, auth
+│   ├── routes/      # health, books, profiles, progress, settings
 │   ├── db.ts        # SQLite init, queries, everything data
 │   ├── config.ts    # Constants, env vars, path resolvers
 │   ├── scanner.ts   # Filesystem scanning + book indexing
@@ -191,11 +189,11 @@ jabr/
 ├── src/             # Vue SPA (`.vue` SFCs, compiled with vue-tsc + vite)
 │   ├── main.ts      # Vue entry point
 │   ├── App.vue      # Root component
-│   ├── router/      # Vue Router config (3 routes)
-│   ├── stores/      # Pinia setup stores: books, profiles, progress, settings, auth
+│   ├── router/      # Vue Router config (library, reader, settings)
+│   ├── stores/      # Pinia setup stores: books, profiles, progress, settings
 │   ├── services/    # Effect-TS HTTP client + typed API services
 │   ├── components/  # BookCard, SearchBar, BookReader + readers/{Epub,Pdf,Text}
-│   ├── pages/       # Library, Reader, Settings, Login
+│   ├── pages/       # Library, Reader, Settings
 │   ├── styles/      # Tailwind CSS 4 + custom theme
 │   ├── types/       # TypeScript interfaces
 │   └── __tests__/   # jsdom vitest suites (stores, invariants, format)
@@ -211,24 +209,36 @@ jabr/
 
 The Dockerfile does a multi-stage build because we believe in minimal attack surfaces:
 
-1. Install deps with `--frozen-lockfile`, compile TypeScript, build the Vue SPA
-2. Copy only the artifacts into a fresh `node:22-alpine` image
-3. `CMD ["node", "dist/server/index.js"]` — no cron, no sidecars, no init system
+1. **build** — `pnpm install --frozen-lockfile` (build scripts limited to the `allowBuilds` list in `pnpm-workspace.yaml`), then `pnpm build` compiles the server and the SPA.
+2. **prod-deps** — a second `pnpm install --prod` so the runtime image never sees devDependencies or a compiler toolchain.
+3. **runtime** — `node:24-alpine` with only `dist/`, production `node_modules/`, and `package.json` (needed for `"type": "module"`). Runs as the unprivileged `node` user, with `/app/data` and `/app/books` pre-created and chowned so the named volumes inherit writable ownership.
+4. `CMD ["node", "dist/server/index.js"]` — no cron, no sidecars, no init system. An image-level `HEALTHCHECK` polls `/api/health`.
 
 The `compose.yml` mounts `data` and `books` volumes. That's where your stuff lives. Don't lose those.
 
+> Building with podman defaults to the OCI image format, which silently **drops** `HEALTHCHECK`. Use `podman build --format docker .` (or run the healthcheck from Compose) if you want container health reporting.
+
 ## Security
 
-JABR is designed for **local network use only**. It is not hardened for direct internet exposure.
+**JABR has no authentication, and that is a decision, not an oversight.**
 
-If you plan to expose JABR outside your local network, you should implement the following before doing so:
+This is a self-hosted reader for a trusted internal network — your LAN, your NAS, your tailnet. There are no accounts, no sessions, no cookies and no password field, because reader profiles exist to keep *reading positions* separate, not to keep people out. Inventing a half-authenticated API would be worse than having none: it would look like a security boundary while protecting nothing.
 
-- **Password hashing**: Passwords are currently stored and compared in plain text. Use bcrypt or argon2 for storage and verification.
-- **API authentication middleware**: API endpoints are not protected by authentication. Add middleware that verifies the `jabr_auth` cookie on all state-modifying endpoints.
-- **Database hardening**: The `resetDatabase` function uses dynamic table names. While currently whitelisted in code, refactor to use explicit queries.
-- **HTTPS**: Use a reverse proxy (nginx, Caddy) to terminate TLS.
-- **Rate limiting**: Add rate limiting on `/api/login` to prevent brute force attacks.
-- **Content Security Policy**: Add proper CSP headers to mitigate XSS risks.
+The corollary is blunt: **do not expose JABR to the internet.** Two reasons, in ascending order of importance:
+
+1. The API is unauthenticated by design. Anyone who can reach the port can read, upload, and delete everything.
+2. Publicly serving a library of copyrighted books is a legal conversation nobody wants to have with a rights holder.
+
+If you need remote access, put it behind something that already knows how to do this: WireGuard/Tailscale, or an authenticating reverse proxy (Authelia, oauth2-proxy, mTLS). Keep the app what it is.
+
+What the app *does* handle on its own, because it costs nothing:
+
+- Book file paths are resolved and traversal-checked (`..` cannot escape the books directory).
+- Uploads are limited to the extension allowlist and sanitised filenames.
+- Text/markdown is rendered in a sandboxed iframe.
+- All SQL is parameterised.
+
+Known rough edges if you ever *do* put this behind an authenticating proxy: `DELETE /api/settings` resets the database with dynamic table names (whitelisted in code, but refactor before trusting it), and `GET /api/settings/export` returns the full backup — so gate state-modifying endpoints at the proxy.
 
 ## Why not PostgreSQL?
 

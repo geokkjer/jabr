@@ -15,7 +15,7 @@
 - [x] 2.2 better-sqlite3 database with auto-schema on startup
 - [x] 2.3 Book filesystem scanner with caching (because rescanning 500 books on every request is for masochists)
 - [x] 2.4 Multer upload endpoint (512MB max, filetype whitelist, sanitized filenames)
-- [x] 2.5 Auth system (cookie-based, disabled by default, not Spring Security)
+- [x] 2.5 ~~Auth system~~ — **removed on purpose.** See "Why no auth?" below.
 - [x] 2.6 Calibre migration (CLI + API, reads metadata.db directly, no Calibre runtime needed)
 
 ### Deviations from (unwritten) plan
@@ -29,7 +29,7 @@
 - [x] 3.3 Progress API composable (get by profile+book, upsert)
 - [x] 3.4 Profiles API composable (list, create)
 - [x] 3.5 Settings API composable (get, save, reset)
-- [x] 3.6 Auth API composable (login, logout, status check)
+- [x] 3.6 ~~Auth API composable~~ — removed with the rest of the login system.
 - [x] 3.7 Export/Migration API composable (backup download, Calibre import)
 
 ### Deviations from plan
@@ -91,7 +91,7 @@
 | Feature | Likelihood | Reasoning |
 |---------|-----------|-----------|
 | PostgreSQL support | Near zero | See "Why not PostgreSQL?" in the README |
-| OAuth/SSO integration | Near zero | It's a book reader for one person. Use a password. |
+| OAuth/SSO integration | Zero | Deleted the login system on purpose. Use your tailnet, not a password. |
 | Kubernetes helm chart | Zero | If you're deploying a book reader to Kubernetes, you've lost the plot |
 | AI-powered recommendation engine | Negative | The app can't even recommend a book because *that's your job* |
 | EPUB annotation support | Low | epubjs supports it, but implementing annotation storage requires thought |
@@ -108,6 +108,16 @@ PostgREST is neat. It generates a REST API from your PostgreSQL schema. It also 
 ### Why SQLite instead of PostgreSQL?
 
 Asked and answered. But in short: five tables, one user, no concurrent writes. SQLite handles this workload with the enthusiasm of a golden retriever fetching a stick. PostgreSQL handles this workload with the solemn dignity of a mainframe operator who was told there's a slight breeze in the data center.
+
+### Why no auth?
+
+Because this runs on a trusted internal network and is never exposed to the internet, and because publicly serving a library of copyrighted books is a legal mess we would rather not invite.
+
+There *was* a login system: a login page, a cookie, a router guard and an `authEnabled` setting. It was removed rather than finished, for one specific reason — the server never verified the cookie, so enabling "auth" restricted the UI while leaving every API endpoint wide open. That is worse than no auth, because it looks like a security boundary.
+
+Reader profiles remain, and they are not security: they exist so two people (or one person with two moods) keep separate reading positions.
+
+If you need remote access, terminate it in WireGuard/Tailscale or an authenticating reverse proxy. The app stays dumb on purpose.
 
 ### Why client-side search and sort?
 

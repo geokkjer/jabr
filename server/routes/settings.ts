@@ -15,7 +15,7 @@ export const settingsRouter = Router()
 
 settingsRouter.get('/', (_req: Request, res: Response) => {
   try {
-    const keys = ['libraryPath', 'authEnabled', 'username', 'password', 'readerTarget', 'calibreMigrated', 'calibreLibraryPath']
+    const keys = ['libraryPath', 'readerTarget', 'calibreMigrated', 'calibreLibraryPath']
     const settings: Record<string, string | null> = {}
     for (const key of keys) {
       settings[key] = getSetting(key)
@@ -88,7 +88,7 @@ settingsRouter.get('/export', async (_req: Request, res: Response) => {
     const profiles = listProfiles()
     const progress = listAllProgress(10000)
     const settings: Record<string, string | null> = {}
-    const keys = ['libraryPath', 'authEnabled', 'username', 'password', 'readerTarget']
+    const keys = ['libraryPath', 'readerTarget', 'calibreMigrated', 'calibreLibraryPath']
     for (const key of keys) {
       settings[key] = getSetting(key)
     }

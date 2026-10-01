@@ -338,7 +338,7 @@ describe('Settings API', () => {
     expect(status).toBe(200)
     const settings = body as Record<string, unknown>
     expect(settings.libraryPath).toBeNull()
-    expect(settings.authEnabled).toBeNull()
+    expect(settings.readerTarget).toBeNull()
   })
 
   it('saves and retrieves settings', async () => {
@@ -346,110 +346,31 @@ describe('Settings API', () => {
       method: 'POST',
       body: JSON.stringify({
         libraryPath: '/tmp/books',
-        authEnabled: 'true',
-        username: 'admin',
+        readerTarget: 'epub',
       }),
     })
 
     const { body } = await api('/api/settings')
     const settings = body as Record<string, unknown>
     expect(settings.libraryPath).toBe('/tmp/books')
-    expect(settings.authEnabled).toBe('true')
-    expect(settings.username).toBe('admin')
+    expect(settings.readerTarget).toBe('epub')
   })
 
   it('updates individual settings without affecting others', async () => {
     await api('/api/settings', {
       method: 'POST',
-      body: JSON.stringify({ authEnabled: 'true', username: 'alice' }),
+      body: JSON.stringify({ libraryPath: '/tmp/library', readerTarget: 'pdf' }),
     })
 
     await api('/api/settings', {
       method: 'POST',
-      body: JSON.stringify({ username: 'bob' }),
+      body: JSON.stringify({ readerTarget: 'epub' }),
     })
 
     const { body } = await api('/api/settings')
     const settings = body as Record<string, unknown>
-    expect(settings.authEnabled).toBe('true')
-    expect(settings.username).toBe('bob')
-  })
-})
-
-// ============================================================
-// Auth — covers Login, Logout, ToggleAuthentication rules
-// ============================================================
-describe('Auth API', () => {
-  it('reports auth disabled when not configured', async () => {
-    const { status, body } = await api('/api/login/status')
-    expect(status).toBe(200)
-    expect((body as Record<string, unknown>).authEnabled).toBe(false)
-  })
-
-  it('login succeeds when auth is disabled', async () => {
-    const { status, body } = await api('/api/login', {
-      method: 'POST',
-      body: JSON.stringify({ username: 'anything', password: 'anything' }),
-    })
-    expect(status).toBe(200)
-    expect((body as Record<string, unknown>).ok).toBe(true)
-  })
-
-  it('login succeeds with correct credentials when auth enabled', async () => {
-    await api('/api/settings', {
-      method: 'POST',
-      body: JSON.stringify({
-        authEnabled: 'true',
-        username: 'admin',
-        password: 'secret123',
-      }),
-    })
-
-    const { status, body } = await api('/api/login', {
-      method: 'POST',
-      body: JSON.stringify({ username: 'admin', password: 'secret123' }),
-    })
-    expect(status).toBe(200)
-    expect((body as Record<string, unknown>).ok).toBe(true)
-  })
-
-  it('login fails with wrong credentials when auth enabled', async () => {
-    await api('/api/settings', {
-      method: 'POST',
-      body: JSON.stringify({
-        authEnabled: 'true',
-        username: 'admin',
-        password: 'secret123',
-      }),
-    })
-
-    const { status } = await api('/api/login', {
-      method: 'POST',
-      body: JSON.stringify({ username: 'admin', password: 'wrong' }),
-    })
-    expect(status).toBe(401)
-  })
-
-  it('login fails with wrong username when auth enabled', async () => {
-    await api('/api/settings', {
-      method: 'POST',
-      body: JSON.stringify({
-        authEnabled: 'true',
-        username: 'admin',
-        password: 'secret123',
-      }),
-    })
-
-    const { status } = await api('/api/login', {
-      method: 'POST',
-      body: JSON.stringify({ username: 'hacker', password: 'secret123' }),
-    })
-    expect(status).toBe(401)
-  })
-
-  it('DELETE /api/login clears the auth cookie', async () => {
-    const res = await fetch(`${baseUrl}/api/login`, { method: 'DELETE' })
-    expect(res.status).toBe(200)
+    expect(settings.libraryPath).toBe('/tmp/library')
+    expect(settings.readerTarget).toBe('epub')
   })
 })
 

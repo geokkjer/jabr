@@ -4,7 +4,6 @@ import { useRouter } from 'vue-router'
 import { useBooksStore } from '@/stores/books'
 import { useProgressStore } from '@/stores/progress'
 import { useProfilesStore } from '@/stores/profiles'
-import { useAuthStore } from '@/stores/auth'
 import { storeToRefs } from 'pinia'
 import type { Book } from '@/types'
 import BookCard from '@/components/BookCard.vue'
@@ -16,7 +15,6 @@ const router = useRouter()
 const booksStore = useBooksStore()
 const progressStore = useProgressStore()
 const profilesStore = useProfilesStore()
-const authStore = useAuthStore()
 
 const { filteredBooks, loading, error, search, sort, order } = storeToRefs(booksStore)
 const { recentlyRead } = storeToRefs(progressStore)
@@ -28,7 +26,6 @@ onMounted(async () => {
   await Promise.all([
     profilesStore.fetchProfiles(),
     booksStore.fetchBooks(),
-    authStore.checkStatus(),
   ])
   // Needs an active profile first, so runs after the parallel fetch
   if (profilesStore.activeId) {
@@ -64,10 +61,6 @@ async function uploadBook(ev: Event) {
   }
 }
 
-async function logout() {
-  await authStore.logout()
-  window.location.reload()
-}
 </script>
 
 <template>
@@ -107,13 +100,6 @@ async function logout() {
             />
             {{ uploadBusy ? 'Uploading...' : 'Upload book' }}
           </label>
-          <button
-            v-if="authStore.authEnabled && authStore.isAuthenticated"
-            class="px-4 py-2 bg-ocher text-coffee font-bold border-2 border-coffee rounded-xl hover:shadow-brutal transition-all"
-            @click="logout"
-          >
-            Logout
-          </button>
         </div>
       </div>
 

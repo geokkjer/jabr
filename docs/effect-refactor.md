@@ -63,12 +63,12 @@ Every error path is **typed** in the compiler. Every async concern (retry, timeo
 │    ReaderPage, LibraryPage, SettingsPage   │     Knows only about stores & template
 ├───────────────────────────────────────────┤
 │          Pinia Setup Stores                │  ← defineStore('id', () => { ... })
-│    books, profiles, auth, progress,        │     Thin: calls Effect.runPromise() at boundary
+│    books, profiles, progress, settings     │     Thin: calls Effect.runPromise() at boundary
 │    settings                                │     Holds reactive refs, exposes computed getters
 ├───────────────────────────────────────────┤
 │           Effect API Services              │  ← services/api.ts
 │    BookApi, ProfileApi, ProgressApi,       │     Pure Effect: pipe, Schema.decode, retry
-│    SettingsApi, AuthApi, MigrationApi      │     No Vue, no Pinia — framework-agnostic
+│    SettingsApi, MigrationApi               │     No Vue, no Pinia — framework-agnostic
 ├───────────────────────────────────────────┤
 │           Effect HTTP Client               │  ← services/http-client.ts
 │    fetchEffect, fetchJson, fetchJsonSafe,  │     Typed errors, retry schedule, timeout
@@ -93,7 +93,6 @@ src/
 │   ├── books.ts            ← Pinia setup store
 │   ├── profiles.ts         ← Pinia setup store
 │   ├── progress.ts         ← Pinia setup store
-│   ├── auth.ts             ← Pinia setup store
 │   └── settings.ts         ← Pinia setup store
 ├── pages/
 │   ├── LibraryPage.vue     ← <script setup>

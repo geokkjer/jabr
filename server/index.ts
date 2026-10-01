@@ -11,7 +11,6 @@ import {
 } from './config.js'
 import { getDb } from './db.js'
 import { healthRouter } from './routes/health.js'
-import { authRouter } from './routes/auth.js'
 import { profilesRouter } from './routes/profiles.js'
 import { progressRouter } from './routes/progress.js'
 import { settingsRouter } from './routes/settings.js'
@@ -33,7 +32,6 @@ app.use('/api/book', bookFileRouter)
 app.use('/api/profiles', profilesRouter)
 app.use('/api/progress', progressRouter)
 app.use('/api/settings', settingsRouter)
-app.use('/api/login', authRouter)
 
 // Serve static files in production
 if (NODE_ENV === 'production') {
