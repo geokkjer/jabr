@@ -35,7 +35,9 @@ spec:
             - name: backup
               image: ghcr.io/geokkjer/jabr:0.1.0-beta.1
               imagePullPolicy: IfNotPresent
-              command: ["node", "/scripts/backup.cjs"]
+              # Mounted under /app so `require('better-sqlite3')` resolves
+              # against the image's /app/node_modules.
+              command: ["node", "/app/scripts/backup.cjs"]
               env:
                 - name: JABR_DB_PATH
                   value: /app/data/jabr.sqlite3
@@ -55,7 +57,7 @@ spec:
                 - name: backup
                   mountPath: /backup
                 - name: scripts
-                  mountPath: /scripts
+                  mountPath: /app/scripts
                   readOnly: true
                 - name: tmp
                   mountPath: /tmp
