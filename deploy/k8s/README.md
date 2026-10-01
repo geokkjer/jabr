@@ -45,6 +45,40 @@ kubectl apply -k deploy/k8s
 kubectl -n jabr rollout status deployment/jabr
 ```
 
+### If your cluster has no default StorageClass
+
+Talos, k3s without the bundled provisioner, and plenty of bare-metal clusters
+ship **no** StorageClass. The PVCs use the default one, so without it the
+Deployment sits `Pending` forever with nothing obviously wrong in the events.
+
+Install one first. For a single-node/dev cluster, local-path works:
+
+```sh
+kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.30/deploy/local-path-storage.yaml
+kubectl patch storageclass local-path \
+  -p '{"metadata":{"annotations":{"storageclass.kubernetes.io/is-default-class":"true"}}}'
+
+# local-path's helper pods mount a hostPath, which Pod Security Admission
+# forbids at the "baseline" level the upstream manifest sets on its own
+# namespace. Without this label, provisioning fails with:
+#   failed to create volume ... violates PodSecurity "baseline:latest"
+kubectl label namespace local-path-storage \
+  pod-security.kubernetes.io/enforce=privileged --overwrite
+```
+
+For production, use whatever CSI you already run (Longhorn, Ceph, NFS). The
+books volume in particular is a good candidate for shared storage, so your
+library outlives the cluster.
+
+Verify the volumes bound before blaming the app:
+
+```sh
+kubectl -n jabr get pvc        # jabr-data and jabr-books must be Bound
+```
+
+`jabr-backup` stays `Pending` until the CronJob first runs — the provisioner
+uses `WaitForFirstConsumer`, so that is expected, not a fault.
+
 ## 4. Reach it
 
 The Service is `ClusterIP` on port 80, deliberately — JABR has no
@@ -98,6 +132,15 @@ whatever you already use (restic, rclone, velero).
 To restore: scale the deployment to 0, copy the chosen dump over
 `/app/data/jabr.sqlite3` on the data PVC, delete any leftover
 `jabr.sqlite3-wal` / `-shm` files, then scale back to 1.
+
+## Verified on
+
+Applied to a live single-node-pair Talos v1.14.2 / Kubernetes v1.37 cluster
+(Talos' own `talosctl cluster create docker` provisioner) with local-path
+storage: rollout, PVC binding, non-root + read-only root filesystem, probes,
+the nightly backup job (dump written, `integrity_check` ok), and the app
+end-to-end through the Service — 18/18 checks from the browser suite in
+`e2e/live-test.mjs`, including EPUB and PDF rendering.
 
 ## What these manifests deliberately do not include
 
