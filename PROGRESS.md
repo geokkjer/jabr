@@ -74,7 +74,7 @@
 
 ## Phase 7: Build & Deploy
 - [x] 7.1 Package.json scripts (`dev`, `build`, `lint`, `format`, `migrate`, `db:dev:up/down`)
-- [x] 7.2 Production build (`vite build` + `tsc -p server/`)
+- [x] 7.2 Production build (`vite build` for the SPA, `esbuild` bundle for the server; `tsc --noEmit` for checking)
 - [x] 7.3 Multi-stage Dockerfile (build → runtime, node:22-alpine both stages)
 - [x] 7.4 Docker Compose (`compose.yml`, port 8080, named volumes)
 - [x] 7.5 Nginx config (for alternative deployment with PostgREST — not the default)

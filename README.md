@@ -178,7 +178,7 @@ Nothing is wrong with the project when this happens — `tsx watch` and `vite` s
 
 ```
 jabr/
-├── server/          # Express API (TypeScript, compiled with tsc)
+├── server/          # Express API (TypeScript, bundled by esbuild)
 │   ├── index.ts     # App wiring and server entry
 │   ├── routes/      # health, books, profiles, progress, settings
 │   ├── db.ts        # SQLite init, queries, everything data
