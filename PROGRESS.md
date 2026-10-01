@@ -1,5 +1,11 @@
 # JABR: Progress Report
 
+> **Final entry (2026-10-01): retired.** JABR reached `0.1.0-beta.2` and was
+> folded into the media-server umbrella, which continues this work on a Cordis
+> monorepo with a Kubernetes/Talos deployment. What that migration carried over
+> is recorded in `.agents/notes/implemented/process/2026-10-01-absorbing-jabr.md`
+> in that repository. This document stays as the build record it always was.
+
 > *The following is a record of what we actually built, not what we planned to build before we realized that PostgreSQL for a single-user book reader is like hiring a cargo ship to cross a pond.*
 
 ## Phase 1: Project Foundation

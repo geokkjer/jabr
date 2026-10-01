@@ -1,5 +1,22 @@
 # JABR
 
+> ### Retired — folded into [media-server](https://git.geokkjer.eu/geir/media-server)
+>
+> This app reached a working beta (`0.1.0-beta.2`) and was then absorbed into a
+> larger self-hosted media server that covers books alongside movies, TV and
+> music. The book-reader work continued there: the reader fixes found here, the
+> browser end-to-end harness, and the Kubernetes deployment lessons all live in
+> that repository now, on a Cordis monorepo with a k8s/Talos deployment path.
+>
+> Nothing here is deleted or broken — the beta tags, images and history remain —
+> but this repository is a historical artifact of that work and will not be
+> developed further. New work belongs in media-server.
+>
+> Licensing note: this repository is AGPL-3.0-or-later and media-server is
+> GPL-3.0-or-later. Both are the same author's work, so the absorbed parts are
+> his to relicense; if this repo ever gains outside contributors, that stops
+> being true.
+
 **Just Another Book Reader.**
 
 A self-hosted e-book reader that lives in your browser. Drop files in a directory, read them from anywhere. Supports EPUB, PDF, and plain text.
