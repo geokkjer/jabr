@@ -1,6 +1,8 @@
 allowBuilds:
+  better-sqlite3: true
   core-js: true
   es5-ext: true
+  esbuild: true
 overrides:
   '@vue/compat': 'beta'
   '@vue/compiler-core': 'beta'

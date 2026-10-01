@@ -1,0 +1,371 @@
+-- allium: 3
+-- jabr.allium
+
+-- Scope: JABR self-hosted e-book reader
+-- Includes: Book library management, reading with progress tracking,
+--           reader profiles, optional authentication, Calibre onboarding,
+--           settings configuration
+-- Excludes:
+--   - Data export (infrastructure, black box)
+--   - EPUB/PDF rendering internals (implementation)
+--   - Database or filesystem storage (implementation)
+--   - HTTP routing, cookies, or session mechanics (implementation)
+
+
+config {
+    max_upload_size: Bytes = 512.MB
+    allowed_formats: Set<String> = {"pdf", "epub", "txt", "md"}
+    session_duration: Duration = 7.days
+    default_username: String = "admin"
+    default_password: String = "admin"
+}
+
+
+actor Reader {
+    identified_by cookie: SessionCookie within: null
+}
+
+
+entity Book {
+    id: String
+    title: String
+    author: String
+    path: String
+    format: pdf | epub | txt | md
+    size: Bytes
+    mtime: Timestamp
+}
+
+entity Profile {
+    id: String
+    name: String
+    created_at: Timestamp
+}
+
+entity ReadingProgress {
+    profile: Profile with progress = this
+    book: Book with progress = this
+    format: String
+    location_epub: String?    -- CFI string when format = epub
+    location_page: Integer?   -- page number when format = pdf
+    location_offset: Integer? -- character offset when format = text
+    percent: Real             -- 0.0 to 100.0
+    updated_at: Timestamp
+}
+
+entity AppSettings {
+    library_path: String?
+    auth_enabled: Boolean
+    username: String
+    password: String
+    reader_target: String?
+}
+
+external entity CalibreLibrary {
+    path: String
+    metadata_db_exists: Boolean
+}
+
+
+-- ============================================================
+-- Rules
+-- ============================================================
+
+rule RefreshLibrary {
+    when: LibraryRefreshRequested()
+
+    ensures:
+        for file in books_directory:
+            if file.extension in config.allowed_formats:
+                Book exists with metadata parsed from file path
+        for book in known_books:
+            if book's file no longer on disk:
+                Book removed from library
+}
+
+rule UploadBook {
+    when: ReaderUploadsBook(viewer, file)
+
+    requires: file.extension in config.allowed_formats
+    requires: file.size <= config.max_upload_size
+
+    ensures: Book.created(
+        title: title parsed from filename,
+        author: author parsed from filename,
+        format: file.extension,
+        size: file.size,
+        path: "Imported/{sanitized_name}"
+    )
+}
+
+rule CreateProfile {
+    when: ReaderCreatesProfile(viewer, name)
+
+    requires: name != ""
+
+    ensures: Profile.created(
+        id: generated,
+        name: name,
+        created_at: now
+    )
+}
+
+rule RecordReadingProgress {
+    when: viewer: Reader.ReaderAdvances(book, location, percent)
+
+    requires: a Profile is active for viewer
+    requires: book is in library
+
+    ensures: ReadingProgress exists for active_profile + book
+    ensures: ReadingProgress.location_epub = location.cfi
+        when book.format = epub and location.cfi != null
+    ensures: ReadingProgress.location_page = location.page
+        when book.format = pdf and location.page != null
+    ensures: ReadingProgress.location_offset = location.offset
+        when book.format in {txt, md} and location.offset != null
+    ensures: ReadingProgress.percent = percent
+    ensures: ReadingProgress.updated_at = now
+}
+
+rule RestoreReadingProgress {
+    when: ReaderOpensBook(viewer, book)
+
+    requires: book is in library
+    requires: a Profile is active for viewer
+
+    ensures: previous ReadingProgress for active_profile + book is loaded
+        when it exists
+    ensures: reader sees book content at last saved position
+}
+
+rule Login {
+    when: ReaderLogsIn(viewer, credentials)
+
+    requires: AppSettings.auth_enabled = true
+
+    let expected_user = AppSettings.username ?? config.default_username
+    let expected_pass = AppSettings.password ?? config.default_password
+
+    ensures: viewer is authenticated
+        when credentials.username = expected_user and credentials.password = expected_pass
+    ensures: viewer is not authenticated
+        when credentials.username != expected_user or credentials.password != expected_pass
+}
+
+rule Logout {
+    when: ReaderLogsOut(viewer)
+
+    ensures: viewer is not authenticated
+}
+
+rule MigrateFromCalibre {
+    when: ReaderMigratesCalibre(viewer, calibre_path, options)
+
+    requires: CalibreLibrary exists at calibre_path
+    requires: CalibreLibrary.metadata_db_exists at calibre_path/metadata.db
+
+    let books = read from CalibreLibrary.metadata_db
+    let filtered = filter_by_preferred_format(books, options.prefer_format)
+
+    ensures:
+        for calibre_book in filtered:
+            if calibre_book.file not already in books directory:
+                Book.created(
+                    title: calibre_book.title,
+                    author: calibre_book.author,
+                    format: calibre_book.format,
+                    size: calibre_book.size,
+                    path: "{calibre_book.author} - {calibre_book.title}.{ext}"
+                )
+
+    ensures: AppSettings.calibre_migrated = true
+    ensures: AppSettings.calibre_library_path = calibre_path
+
+    @guidance
+        -- Calibre's metadata.db is read directly via SQLite.
+        -- Duplicate filenames (same Author - Title.ext) are silently skipped.
+        -- The migration is additive: running it multiple times is safe.
+}
+
+rule UpdateSettings {
+    when: ReaderUpdatesSettings(viewer, changes)
+
+    ensures:
+        for (key, value) in changes:
+            AppSettings.key = value
+}
+
+rule SelectActiveProfile {
+    when: ReaderSelectsProfile(viewer, profile)
+
+    requires: profile exists
+
+    ensures: active_profile for viewer = profile
+}
+
+rule ToggleAuthentication {
+    when: ReaderTogglesAuth(viewer, enabled)
+
+    ensures: AppSettings.auth_enabled = enabled
+}
+
+
+-- ============================================================
+-- Surfaces
+-- ============================================================
+
+surface LibraryDashboard {
+    facing viewer: Reader
+
+    provides:
+        ViewLibrary()
+            when viewer is authenticated or AppSettings.auth_enabled = false
+
+    exposes:
+        each book in library:
+            book.title
+            book.author
+            book.format
+            book.size
+            book.mtime
+
+    provides:
+        SearchBooks(query: String)
+            returns books where title or author matches query
+            when viewer is authenticated or AppSettings.auth_enabled = false
+
+        UploadBook(file)
+            when viewer is authenticated or AppSettings.auth_enabled = false
+        CreateProfile(name)
+            when viewer is authenticated or AppSettings.auth_enabled = false
+        SelectActiveProfile(profile_id)
+            when viewer is authenticated or AppSettings.auth_enabled = false
+
+    related:
+        BookReader(book) when book selected
+        SettingsDashboard() when settings requested
+
+    @guarantee LibraryIsCurrent
+        -- Books shown reflect the current state of the filesystem
+        -- at the time the library is viewed.
+}
+
+surface BookReader {
+    facing viewer: Reader
+
+    context book: Book
+
+    provides:
+        OpenBook(book)
+            when book is in library
+            when viewer is authenticated or AppSettings.auth_enabled = false
+
+    exposes:
+        book.title
+        book.author
+        book.format
+        book.content
+
+    provides:
+        AdvancePosition(location, percent)
+            saves ReadingProgress for active_profile + book
+
+    related:
+        LibraryDashboard() when viewer navigates back
+}
+
+surface SettingsDashboard {
+    facing viewer: Reader
+
+    provides:
+        ViewSettings()
+            when viewer is authenticated or AppSettings.auth_enabled = false
+
+    exposes:
+        AppSettings values
+        Profile list
+        active_profile
+
+    provides:
+        UpdateSettings(changes)
+            when viewer is authenticated or AppSettings.auth_enabled = false
+        MigrateFromCalibre(path, options)
+            when viewer is authenticated or AppSettings.auth_enabled = false
+        ToggleAuthentication(enabled)
+            when viewer is authenticated or AppSettings.auth_enabled = false
+        ResetDatabase()
+            when viewer is authenticated or AppSettings.auth_enabled = false
+
+    related:
+        LibraryDashboard()
+}
+
+surface LoginPage {
+    facing viewer: Reader
+
+    provides:
+        Login(credentials)
+            when AppSettings.auth_enabled = true
+        Logout()
+            when viewer is authenticated
+
+    related:
+        LibraryDashboard() when login succeeds
+}
+
+surface CalibreMigrationWizard {
+    facing viewer: Reader
+
+    context calibre_path: String
+
+    provides:
+        PreviewMigration(calibre_path, options)
+            -- Runs a dry-run: shows what would be imported without copying
+
+    provides:
+        RunMigration(calibre_path, options)
+            -- Copies books from Calibre library into books directory
+
+    exposes:
+        migration_result:
+            total books found
+            would_be_copied | copied
+            would_be_skipped | skipped
+            errors
+        each book's:
+            title, author, format, action (copy | skip | error), reason
+
+    related:
+        SettingsDashboard() when migration completes or is cancelled
+}
+
+
+-- ============================================================
+-- Invariants
+-- ============================================================
+
+invariant NoDuplicateBookPaths {
+    for book in Book:
+        book.path is unique
+}
+
+invariant AuthGatesAccess {
+    for viewer in Reader:
+        if AppSettings.auth_enabled = true:
+            viewer must be authenticated to access library, reader, or settings
+}
+
+invariant ProgressBelongsToKnownProfile {
+    for p in ReadingProgress:
+        p.profile exists
+}
+
+
+-- ============================================================
+-- Decisions & open questions
+-- ============================================================
+
+-- Decision: Deleting a profile cascades to its reading progress.
+-- Decision: Deleting a book file from disk is prevented when it is
+--   currently open in a reader session. Close the book first.
+--   If already loaded, the book remains available until the tab closes.

@@ -5,6 +5,13 @@ import { DB_PATH } from './config.js'
 
 let dbSingleton: Database.Database | undefined
 
+export function closeDb(): void {
+  if (dbSingleton) {
+    dbSingleton.close()
+    dbSingleton = undefined
+  }
+}
+
 export interface Profile {
   id: string
   name: string
