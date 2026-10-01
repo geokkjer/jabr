@@ -92,7 +92,7 @@
 |---------|-----------|-----------|
 | PostgreSQL support | Near zero | See "Why not PostgreSQL?" in the README |
 | OAuth/SSO integration | Zero | Deleted the login system on purpose. Use your tailnet, not a password. |
-| Kubernetes helm chart | Zero | If you're deploying a book reader to Kubernetes, you've lost the plot |
+| Kubernetes helm chart | Shipped manifests | We moved to k8s. `deploy/k8s/` has plain manifests instead of a chart, because one deployment does not need a templating layer. |
 | AI-powered recommendation engine | Negative | The app can't even recommend a book because *that's your job* |
 | EPUB annotation support | Low | epubjs supports it, but implementing annotation storage requires thought |
 | WASM-based reader for everything | Low | pdfjs-dist already handles PDFs and it's written in... not WASM |

@@ -1,0 +1,17 @@
+# ClusterIP only, on purpose. JABR has no authentication: it is meant to be
+# reached over your LAN, a tailnet, or a port-forward — never the public
+# internet. Put an authenticating proxy in front if you need remote access.
+apiVersion: v1
+kind: Service
+metadata:
+  name: jabr
+  labels:
+    app.kubernetes.io/name: jabr
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: jabr
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

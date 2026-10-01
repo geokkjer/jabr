@@ -9,7 +9,7 @@ import {
   DB_PATH,
   getBooksDir,
 } from './config.js'
-import { getDb } from './db.js'
+import { getDb, closeDb } from './db.js'
 import { healthRouter } from './routes/health.js'
 import { profilesRouter } from './routes/profiles.js'
 import { progressRouter } from './routes/progress.js'
@@ -44,11 +44,31 @@ if (NODE_ENV === 'production') {
 
 // Start server
 if (NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`JABR server running on port ${PORT}`)
     console.log(`Books directory: ${getBooksDir()}`)
     console.log(`Database: ${DB_PATH}`)
   })
+
+  // Kubernetes sends SIGTERM before killing the pod (and Ctrl-C sends SIGINT):
+  // stop accepting connections, let in-flight requests drain, close SQLite
+  // cleanly, then exit. Without this the process dies mid-write.
+  const shutdown = (signal: NodeJS.Signals) => {
+    console.log(`${signal} received — shutting down`)
+    server.close(() => {
+      closeDb()
+      process.exit(0)
+    })
+    // Keep-alive connections would otherwise hold the server open
+    server.closeIdleConnections()
+    setTimeout(() => {
+      console.warn('Shutdown timed out — forcing exit')
+      process.exit(1)
+    }, 10_000).unref()
+  }
+
+  process.on('SIGTERM', shutdown)
+  process.on('SIGINT', shutdown)
 }
 
 export { app }

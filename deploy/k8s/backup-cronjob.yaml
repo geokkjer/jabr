@@ -1,0 +1,88 @@
+# Nightly hot backup of the SQLite database, keeping the last 7 copies.
+#
+# This keeps backups *inside the cluster*. Copy them off-cluster (restic, rclone,
+# velero, or whatever you already run) — a PVC is not a backup strategy on its own.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: jabr-backup
+  labels:
+    app.kubernetes.io/name: jabr
+    app.kubernetes.io/component: backup
+spec:
+  schedule: "0 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: jabr
+            app.kubernetes.io/component: backup
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: backup
+              image: ghcr.io/geokkjer/jabr:latest
+              imagePullPolicy: IfNotPresent
+              command: ["node", "/scripts/backup.cjs"]
+              env:
+                - name: JABR_DB_PATH
+                  value: /app/data/jabr.sqlite3
+                - name: BACKUP_DIR
+                  value: /backup
+                - name: BACKUP_KEEP
+                  value: "7"
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: data
+                  mountPath: /app/data
+                  readOnly: true
+                - name: backup
+                  mountPath: /backup
+                - name: scripts
+                  mountPath: /scripts
+                  readOnly: true
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: data
+              persistentVolumeClaim:
+                claimName: jabr-data
+            - name: backup
+              persistentVolumeClaim:
+                claimName: jabr-backup
+            - name: scripts
+              configMap:
+                name: jabr-backup-script
+            - name: tmp
+              emptyDir: {}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jabr-backup
+  labels:
+    app.kubernetes.io/name: jabr
+    app.kubernetes.io/component: backup
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  # storageClassName: ""

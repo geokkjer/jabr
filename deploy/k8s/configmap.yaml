@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jabr-config
+  labels:
+    app.kubernetes.io/name: jabr
+data:
+  NODE_ENV: production
+  JABR_PORT: "3001"
+  JABR_DB_PATH: /app/data/jabr.sqlite3
+  JABR_BOOKS_PATH: /app/books

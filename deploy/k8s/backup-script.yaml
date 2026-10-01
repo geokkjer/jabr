@@ -1,0 +1,48 @@
+# Backup script for the CronJob. Uses better-sqlite3's online backup API
+# (already present in the app image), which is safe to run against a live
+# database — no need to stop the pod or copy WAL files by hand.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jabr-backup-script
+  labels:
+    app.kubernetes.io/name: jabr
+data:
+  backup.cjs: |
+    const Database = require('better-sqlite3')
+    const fs = require('node:fs')
+    const path = require('node:path')
+
+    const SOURCE = process.env.JABR_DB_PATH || '/app/data/jabr.sqlite3'
+    const DIR = process.env.BACKUP_DIR || '/backup'
+    const KEEP = Number(process.env.BACKUP_KEEP || 7)
+
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+    const dest = path.join(DIR, `jabr-${stamp}.sqlite3`)
+
+    fs.mkdirSync(DIR, { recursive: true })
+
+    // timeout rather than readonly: a live WAL database is best opened with a
+    // busy timeout so a concurrent checkpoint does not fail the job.
+    const db = new Database(SOURCE, { timeout: 5000 })
+
+    db.backup(dest)
+      .then(() => {
+        db.close()
+        console.log(`backup written: ${dest}`)
+
+        const old = fs
+          .readdirSync(DIR)
+          .filter((f) => f.startsWith('jabr-') && f.endsWith('.sqlite3'))
+          .sort()
+          .slice(0, -KEEP)
+
+        for (const f of old) {
+          fs.rmSync(path.join(DIR, f))
+          console.log(`pruned: ${f}`)
+        }
+      })
+      .catch((err) => {
+        console.error('backup failed:', err)
+        process.exit(1)
+      })

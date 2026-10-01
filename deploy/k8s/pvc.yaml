@@ -1,0 +1,32 @@
+# Data (SQLite + WAL) is small and write-heavy — ReadWriteOnce is exactly right
+# for a single-replica deployment.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jabr-data
+  labels:
+    app.kubernetes.io/name: jabr
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  # storageClassName: ""   # set to pin a specific StorageClass
+---
+# Books are read-mostly and can dwarf the database. If your library already
+# lives on shared storage (NFS/CephFS/Longhorn), point this at a pre-existing
+# PVC with ReadWriteMany or ReadOnlyMany instead of provisioning a new one.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: jabr-books
+  labels:
+    app.kubernetes.io/name: jabr
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+  # storageClassName: ""
