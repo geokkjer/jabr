@@ -23,9 +23,6 @@ importers:
 
   .:
     dependencies:
-      '@effect/schema':
-        specifier: ^0.75.5
-        version: 0.75.5(effect@3.21.4)
       better-sqlite3:
         specifier: ^12.11.1
         version: 12.11.1
@@ -96,6 +93,9 @@ importers:
       '@vue/tsconfig':
         specifier: ^0.9.1
         version: 0.9.1(typescript@6.0.3)(vue@3.6.0-beta.17(typescript@6.0.3))
+      esbuild:
+        specifier: ^0.28.2
+        version: 0.28.2
       eslint:
         specifier: ^10.11.0
         version: 10.11.0(jiti@2.7.0)
@@ -350,12 +350,6 @@ packages:
   '@csstools/css-tokenizer@4.0.0':
     resolution: {integrity: sha512-QxULHAm7cNu72w97JUNCBFODFaXpbDg+dP8b/oWFAZ2MTRppA3U00Y2L1HqaS4J6yBqxwa/Y3nMBaxVKbB/NsA==}
     engines: {node: '>=20.19.0'}
-
-  '@effect/schema@0.75.5':
-    resolution: {integrity: sha512-TQInulTVCuF+9EIbJpyLP6dvxbQJMphrnRqgexm/Ze39rSjfhJuufF7XvU3SxTgg3HnL7B/kpORTJbHhlE6thw==}
-    deprecated: this package has been merged into the main effect package
-    peerDependencies:
-      effect: ^3.9.2
 
   '@esbuild/aix-ppc64@0.28.2':
     resolution: {integrity: sha512-XExcO+dvLKvVtNTibSTBej1NCAbaGhWn9Ww1ZPx80qsahhPFe/8jgWP0IchNe0F3HwkU7n8ejhH8bjonqht8mQ==}
@@ -3595,11 +3589,6 @@ snapshots:
       css-tree: 3.2.1
 
   '@csstools/css-tokenizer@4.0.0': {}
-
-  '@effect/schema@0.75.5(effect@3.21.4)':
-    dependencies:
-      effect: 3.21.4
-      fast-check: 3.23.2
 
   '@esbuild/aix-ppc64@0.28.2':
     optional: true

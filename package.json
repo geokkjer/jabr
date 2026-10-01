@@ -10,7 +10,9 @@
     "dev:server": "tsx watch server/index.ts",
     "build": "run-s build:client build:server",
     "build:client": "run-p type-check \"build-only {@}\" --",
-    "build:server": "tsc -p server/tsconfig.json",
+    "build:server": "run-s type-check:server bundle:server",
+    "type-check:server": "tsc -p server/tsconfig.json --noEmit",
+    "bundle:server": "esbuild server/index.ts --bundle --platform=node --target=node24 --format=esm --sourcemap --outfile=dist/server/index.js --external:better-sqlite3 \"--banner:js=import { createRequire as __createRequire } from 'node:module'; const require = __createRequire(import.meta.url);\"",
     "preview": "vite preview",
     "start": "node dist/server/index.js",
     "test": "run-s test:client test:server",
@@ -26,7 +28,6 @@
     "migrate": "tsx scripts/migrate-calibre.ts"
   },
   "dependencies": {
-    "@effect/schema": "^0.75.5",
     "better-sqlite3": "^12.11.1",
     "cors": "^2.8.6",
     "effect": "^3.21.4",
@@ -52,6 +53,7 @@
     "@vue/eslint-config-typescript": "^14.9.0",
     "@vue/test-utils": "^2.5.1",
     "@vue/tsconfig": "^0.9.1",
+    "esbuild": "^0.28.2",
     "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-oxlint": "~1.60.0",

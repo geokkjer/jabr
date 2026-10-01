@@ -1,4 +1,4 @@
-# ── Build stage: compile the SPA and the server ────────────────────────────
+# ── Build stage: SPA, bundled server, and the native-module closure ────────
 FROM node:24-alpine AS build
 
 WORKDIR /app
@@ -13,15 +13,24 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build
 
-# ── Production dependencies: no devDependencies, no toolchain ──────────────
-FROM node:24-alpine AS prod-deps
+# esbuild inlines every pure-JS dependency into dist/server/index.js, so the
+# runtime image only needs the native better-sqlite3 module and the two tiny
+# helpers it requires at load time. Copy them with -L so the pnpm symlinks in
+# node_modules are resolved into real files.
+RUN mkdir -p /runtime/node_modules \
+ && cp -RL node_modules/better-sqlite3 /runtime/node_modules/ \
+ && cp -RL node_modules/.pnpm/bindings@*/node_modules/bindings /runtime/node_modules/ \
+ && cp -RL node_modules/.pnpm/file-uri-to-path@*/node_modules/file-uri-to-path /runtime/node_modules/
 
-WORKDIR /app
+# Build-time-only payload: SQLite C sources, TS sources, object files.
+RUN rm -rf /runtime/node_modules/better-sqlite3/deps \
+           /runtime/node_modules/better-sqlite3/src \
+           /runtime/node_modules/better-sqlite3/build/Release/obj.target
 
-RUN corepack enable
-
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN pnpm install --prod --frozen-lockfile
+# Fail the build here rather than at first request if the native module
+# cannot load from the assembled closure.
+RUN cd /runtime \
+ && node -e "const D=require('better-sqlite3');const db=new D(':memory:');db.exec('create table t(x)');db.prepare('insert into t values (1)').run();console.log('better-sqlite3 native module OK')"
 
 # ── Runtime stage ──────────────────────────────────────────────────────────
 FROM node:24-alpine AS runtime
@@ -29,10 +38,10 @@ FROM node:24-alpine AS runtime
 ENV NODE_ENV=production
 WORKDIR /app
 
-# Compiled server (dist/server) and built SPA (dist/), nothing else.
-# package.json is required because the compiled output is ESM ("type": "module").
+# Bundled server + built SPA, the native module closure, and nothing else.
+# package.json is required because the server bundle is ESM ("type": "module").
 COPY --from=build /app/dist ./dist
-COPY --from=prod-deps /app/node_modules ./node_modules
+COPY --from=build /runtime/node_modules ./node_modules
 COPY package.json ./package.json
 
 # Volumes are initialised from these directories, so they inherit node ownership

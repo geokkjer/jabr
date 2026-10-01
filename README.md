@@ -209,12 +209,16 @@ jabr/
 
 The Dockerfile does a multi-stage build because we believe in minimal attack surfaces:
 
-1. **build** — `pnpm install --frozen-lockfile` (build scripts limited to the `allowBuilds` list in `pnpm-workspace.yaml`), then `pnpm build` compiles the server and the SPA.
-2. **prod-deps** — a second `pnpm install --prod` so the runtime image never sees devDependencies or a compiler toolchain.
-3. **runtime** — `node:24-alpine` with only `dist/`, production `node_modules/`, and `package.json` (needed for `"type": "module"`). Runs as the unprivileged `node` user, with `/app/data` and `/app/books` pre-created and chowned so the named volumes inherit writable ownership.
+1. **build** — `pnpm install --frozen-lockfile` (build scripts limited to the `allowBuilds` list in `pnpm-workspace.yaml`), then `pnpm build`. The SPA is bundled by Vite; the server is bundled by esbuild into a single `dist/server/index.js`.
+2. **native closure** — esbuild inlines every pure-JS dependency (Express, multer, cors, …), so the only thing that must exist on disk at runtime is the native `better-sqlite3` module plus its two load-time helpers (`bindings`, `file-uri-to-path`). Those are copied with resolved symlinks, stripped of build-only SQLite sources and object files (~2 MB), and the build **fails loudly** if the module cannot load from that closure.
+3. **runtime** — `node:24-alpine` with only `dist/`, the ~2 MB native closure, and `package.json` (needed for `"type": "module"`). Runs as the unprivileged `node` user, with `/app/data` and `/app/books` pre-created and chowned so the named volumes inherit writable ownership.
 4. `CMD ["node", "dist/server/index.js"]` — no cron, no sidecars, no init system. An image-level `HEALTHCHECK` polls `/api/health`.
 
+Because the server is a bundle, the image carries no `node_modules` tree of its own — no devDependencies, no compiler toolchain, and no compiled test suites.
+
 The `compose.yml` mounts `data` and `books` volumes. That's where your stuff lives. Don't lose those.
+
+> Building with podman defaults to the OCI image format, which silently **drops** `HEALTHCHECK`. Use `podman build --format docker .` (or run the healthcheck from Compose) if you want container health reporting.
 
 > Building with podman defaults to the OCI image format, which silently **drops** `HEALTHCHECK`. Use `podman build --format docker .` (or run the healthcheck from Compose) if you want container health reporting.
 
