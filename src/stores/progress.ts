@@ -34,8 +34,19 @@ export const useProgressStore = defineStore('progress', () => {
     }
   }
 
-  function fetchAllProgress(_profileId: string) {
-    // Fetched on demand — no bulk endpoint available
+  async function fetchAllProgress(profileId: string) {
+    if (!profileId) return
+    loading.value = true
+    try {
+      const result = await Effect.runPromise(ProgressApi.listRecent(profileId))
+      const map: Record<string, BookProgress> = {}
+      for (const p of result as BookProgress[]) {
+        map[p.bookId] = p
+      }
+      progressByBook.value = map
+    } finally {
+      loading.value = false
+    }
   }
 
   async function saveProgress(

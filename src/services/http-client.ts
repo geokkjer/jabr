@@ -6,17 +6,23 @@ import { Effect, Schedule, pipe } from "effect"
 
 // ── Error types ────────────────────────────────────────────────
 
-export class HttpError {
+export class HttpError extends Error {
   readonly _tag = "HttpError"
   constructor(
     readonly status: number,
-    readonly message: string,
-  ) {}
+    message: string,
+  ) {
+    super(message)
+    this.name = "HttpError"
+  }
 }
 
-export class NetworkError {
+export class NetworkError extends Error {
   readonly _tag = "NetworkError"
-  constructor(readonly cause: unknown) {}
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause))
+    this.name = "NetworkError"
+  }
 }
 
 export type FetchError = HttpError | NetworkError
@@ -24,15 +30,17 @@ export type FetchError = HttpError | NetworkError
 // ── Retry policy ───────────────────────────────────────────────
 
 /** Retry up to 3 times on network errors only (not 4xx/5xx) */
-export const retryOnNetworkError = <A, E extends FetchError>(
+export const retryOnNetworkError = <A, E>(
   effect: Effect.Effect<A, E>,
 ): Effect.Effect<A, E> =>
   pipe(
     effect,
     Effect.retry(
       Schedule.exponential("100 millis").pipe(
-        Schedule.recurs(3),
-        Schedule.whileInput((err: FetchError) => err._tag === "NetworkError"),
+        Schedule.intersect(Schedule.recurs(3)),
+        Schedule.whileInput(
+          (err: E) => (err as { _tag?: string })._tag === "NetworkError",
+        ),
       ),
     ),
   )
@@ -49,22 +57,23 @@ export const fetchEffect = (
       try: () => fetch(url, options),
       catch: (cause) => new NetworkError(cause),
     }),
-    Effect.filterOrFail(
-      (res) => res.ok,
-      (res) => {
-        // Try to extract body text for better error messages
-        return new Promise<HttpError>((resolve) => {
-          res.text().then(
-            (body) => resolve(new HttpError(res.status, `${res.status}: ${body || res.statusText}`)),
-            () => resolve(new HttpError(res.status, res.statusText)),
-          )
-        })
-      },
-    ),
+    Effect.flatMap((res): Effect.Effect<Response, FetchError> => {
+      if (res.ok) return Effect.succeed(res)
+      // Try to extract body text for better error messages
+      return pipe(
+        Effect.tryPromise({
+          try: () => res.text(),
+          catch: () => new HttpError(res.status, res.statusText),
+        }),
+        Effect.flatMap((body) =>
+          Effect.fail(new HttpError(res.status, `${res.status}: ${body || res.statusText}`)),
+        ),
+      )
+    }),
   )
 
 /** Parse response as JSON */
-const parseJson = (res: Response): Effect.Effect<unknown, NetworkError> =>
+export const parseJson = (res: Response): Effect.Effect<unknown, NetworkError> =>
   Effect.tryPromise({
     try: () => res.json() as Promise<unknown>,
     catch: (cause) => new NetworkError(cause),

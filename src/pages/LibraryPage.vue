@@ -30,6 +30,10 @@ onMounted(async () => {
     booksStore.fetchBooks(),
     authStore.checkStatus(),
   ])
+  // Needs an active profile first, so runs after the parallel fetch
+  if (profilesStore.activeId) {
+    await progressStore.fetchAllProgress(profilesStore.activeId)
+  }
 })
 
 const currentlyReadingBooks = computed(() => {

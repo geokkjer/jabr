@@ -26,6 +26,8 @@ const pdfContainer = ref<HTMLDivElement | null>(null)
 let pdfDoc: pdfjsLib.PDFDocumentProxy | null = null
 let currentPage = 1
 let saveTimer: ReturnType<typeof setTimeout>
+let observer: IntersectionObserver | null = null
+let scrollHandler: (() => void) | null = null
 
 function scheduleSave(location: Record<string, unknown>, percent: number) {
   clearTimeout(saveTimer)
@@ -79,7 +81,7 @@ onMounted(async () => {
       placeholders.push(div)
     }
 
-    const observer = new IntersectionObserver(
+    observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           if (entry.isIntersecting && pdfDoc) {
@@ -95,7 +97,7 @@ onMounted(async () => {
       }
     )
 
-    placeholders.forEach((p) => observer.observe(p))
+    placeholders.forEach((p) => observer!.observe(p))
 
     const savedPage = props.initialPage
     if (savedPage && savedPage <= totalPages) {
@@ -105,7 +107,7 @@ onMounted(async () => {
       }, 100)
     }
 
-    pdfContainer.value.addEventListener('scroll', () => {
+    scrollHandler = () => {
       if (!pdfContainer.value || !pdfDoc) return
       const els = Array.from(pdfContainer.value.querySelectorAll('div[data-page]'))
       const containerTop = pdfContainer.value.getBoundingClientRect().top
@@ -127,7 +129,8 @@ onMounted(async () => {
         emit('pageChange', currentPage, totalPages)
         scheduleSave({ page: currentPage }, (currentPage / totalPages) * 100)
       }
-    })
+    }
+    pdfContainer.value.addEventListener('scroll', scrollHandler)
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Failed to load PDF'
   } finally {
@@ -137,23 +140,30 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearTimeout(saveTimer)
+  observer?.disconnect()
+  observer = null
+  if (scrollHandler && pdfContainer.value) {
+    pdfContainer.value.removeEventListener('scroll', scrollHandler)
+  }
+  scrollHandler = null
   pdfDoc?.destroy()
+  pdfDoc = null
 })
 </script>
 
 <template>
   <div class="relative w-full h-full">
-    <div v-if="loading" class="flex items-center justify-center h-full text-sage text-lg">
-      Loading PDF...
-    </div>
-    <div v-else-if="error" class="flex items-center justify-center h-full px-8 text-center text-clay">
-      {{ error }}
-    </div>
+    <!-- Container must always be rendered: onMounted needs the ref target in the DOM -->
     <div
-      v-else
       ref="pdfContainer"
       class="w-full h-full overflow-y-auto p-4 scroll-smooth"
       :style="{ backgroundColor: '#2b2118' }"
     />
+    <div v-if="loading" class="absolute inset-0 flex items-center justify-center text-sage text-lg">
+      Loading PDF...
+    </div>
+    <div v-else-if="error" class="absolute inset-0 flex items-center justify-center px-8 text-center text-clay">
+      {{ error }}
+    </div>
   </div>
 </template>

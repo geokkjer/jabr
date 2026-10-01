@@ -1,213 +1,190 @@
 /**
- * Books store tests — covers RefreshLibrary, UploadBook, SearchBooks.
+ * Books store tests — covers RefreshLibrary, UploadBook, SearchBooks
+ * and client-side sorting.
  */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
+import { Effect } from 'effect'
+
+import { HttpError } from '@/services/http-client'
 import type { Book } from '@/types'
 
-// Singleton mock API objects
-const mockBooksApi = {
-  list: vi.fn(),
-  search: vi.fn(),
-  getById: vi.fn(),
-  getContentUrl: vi.fn(() => '/api/book/test'),
-  upload: vi.fn(),
-}
-
-vi.mock('@/composables/useApi', () => ({
-  useBooksApi: () => mockBooksApi,
-  useProfilesApi: () => ({
-    list: vi.fn(),
-    create: vi.fn(),
-  }),
-  useProgressApi: () => ({
-    get: vi.fn(),
-    save: vi.fn(),
-  }),
-  useSettingsApi: () => ({
-    get: vi.fn(),
-    save: vi.fn(),
-    reset: vi.fn(),
-  }),
-  useAuthApi: () => ({
-    login: vi.fn(),
-    logout: vi.fn(),
-    status: vi.fn(),
-  }),
+// BookApi.list is a module-level Effect value, so it needs a mutable holder.
+const holders = vi.hoisted(() => ({
+  listEffect: undefined as unknown,
 }))
 
-import { useBooksStore } from '../books'
+vi.mock('@/services/api', () => ({
+  BookApi: {
+    get list() {
+      return holders.listEffect
+    },
+    search: vi.fn<typeof BookApi.search>(),
+    getById: vi.fn<typeof BookApi.getById>(),
+    getContentUrl: vi.fn<typeof BookApi.getContentUrl>(),
+    upload: vi.fn<typeof BookApi.upload>(),
+  },
+}))
 
-function makeBook(overrides: Partial<Book> = {}): Book {
+import { BookApi } from '@/services/api'
+import { useBooksStore } from '@/stores/books'
+
+const uploadMock = vi.mocked(BookApi.upload)
+
+function book(overrides: Partial<Book> = {}): Book {
   return {
-    id: 'test-book.epub',
-    title: 'Test Book',
-    author: 'Test Author',
-    path: 'test-book.epub',
+    id: 'Author - Title.epub',
+    title: 'Title',
+    author: 'Author',
+    path: 'Author - Title.epub',
     format: 'epub',
-    size: 12345,
-    mtime: new Date('2024-01-01'),
+    size: 1000,
+    mtime: '2024-01-01T00:00:00.000Z',
     ...overrides,
   }
 }
 
-beforeEach(() => {
-  setActivePinia(createPinia())
-  vi.clearAllMocks()
-})
+const library: Book[] = [
+  book({ id: 'b1', title: 'Zebra', author: 'Alice', size: 300, mtime: '2024-03-01T00:00:00.000Z' }),
+  book({ id: 'b2', title: 'Apple', author: 'Zoe', size: 100, mtime: '2024-01-01T00:00:00.000Z' }),
+  book({ id: 'b3', title: 'Mango', author: 'Bob', size: 200, mtime: '2024-02-01T00:00:00.000Z' }),
+]
 
-// ============================================================
-// Fetch Books — covers RefreshLibrary rule
-// ============================================================
-describe('fetchBooks', () => {
-  it('loads books from the API', async () => {
-    mockBooksApi.list.mockResolvedValue([
-      makeBook({ id: 'a.epub', title: 'Book A' }),
-      makeBook({ id: 'b.pdf', title: 'Book B', format: 'pdf' }),
-    ])
-
-    const store = useBooksStore()
-    await store.fetchBooks()
-
-    expect(store.books).toHaveLength(2)
-    expect(store.bookCount).toBe(2)
-    expect(store.loading).toBe(false)
-    expect(store.error).toBeNull()
+describe('useBooksStore', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    holders.listEffect = Effect.succeed(library)
+    uploadMock.mockReturnValue(Effect.succeed({ ok: true, id: 'Imported/New.epub' }))
   })
 
-  it('handles fetch error', async () => {
-    mockBooksApi.list.mockRejectedValue(new Error('Network error'))
+  describe('fetchBooks', () => {
+    it('populates the library', async () => {
+      const store = useBooksStore()
 
-    const store = useBooksStore()
-    await store.fetchBooks()
+      await store.fetchBooks()
 
-    expect(store.error).toBe('Network error')
-    expect(store.books).toHaveLength(0)
-  })
-})
-
-// ============================================================
-// Search & Filter — covers SearchBooks surface
-// ============================================================
-describe('search and filter', () => {
-  async function seedBooks(store: ReturnType<typeof useBooksStore>) {
-    mockBooksApi.list.mockResolvedValue([
-      makeBook({ id: 'a.epub', title: 'Learning Rust', author: 'John Doe' }),
-      makeBook({ id: 'b.pdf', title: 'Python Guide', author: 'Jane Smith', format: 'pdf', size: 9999 }),
-      makeBook({ id: 'c.epub', title: 'Advanced Rust', author: 'Alice Brown' }),
-    ])
-    await store.fetchBooks()
-    // After fetch, we need fresh mock setup since fetchBooks consumes the list mock
-  }
-
-  it('filters books by search query (case-insensitive)', async () => {
-    const store = useBooksStore()
-    await seedBooks(store)
-    store.setSearch('rust')
-    expect(store.filteredBooks).toHaveLength(2)
-    expect(store.filteredBooks.map((b) => b.title)).toContain('Learning Rust')
-    expect(store.filteredBooks.map((b) => b.title)).toContain('Advanced Rust')
-  })
-
-  it('searches by author', async () => {
-    const store = useBooksStore()
-    await seedBooks(store)
-    store.setSearch('jane')
-    expect(store.filteredBooks).toHaveLength(1)
-    expect(store.filteredBooks[0].author).toBe('Jane Smith')
-  })
-
-  it('returns empty when no books match search', async () => {
-    const store = useBooksStore()
-    await seedBooks(store)
-    store.setSearch('nonexistent')
-    expect(store.filteredBooks).toHaveLength(0)
-  })
-
-  it('sorts by title ascending', async () => {
-    const store = useBooksStore()
-    await seedBooks(store)
-    store.setSort('title')
-    store.setOrder('asc')
-    const titles = store.filteredBooks.map((b) => b.title)
-    expect(titles).toEqual(['Advanced Rust', 'Learning Rust', 'Python Guide'])
-  })
-
-  it('sorts by title descending', async () => {
-    const store = useBooksStore()
-    await seedBooks(store)
-    store.setSort('title')
-    store.setOrder('desc')
-    const titles = store.filteredBooks.map((b) => b.title)
-    expect(titles).toEqual(['Python Guide', 'Learning Rust', 'Advanced Rust'])
-  })
-
-  it('sorts by size ascending', async () => {
-    const store = useBooksStore()
-    await seedBooks(store)
-    store.setSort('size')
-    store.setOrder('asc')
-    expect(store.filteredBooks[0].size).toBeLessThanOrEqual(store.filteredBooks[2].size)
-  })
-
-  it('toggles sort order when same sort field selected', async () => {
-    const store = useBooksStore()
-    await seedBooks(store)
-    store.setSort('title')
-    store.setOrder('asc')
-    store.setSort('title') // toggles order
-    expect(store.order).toBe('desc')
-  })
-})
-
-// ============================================================
-// Upload — covers UploadBook rule
-// ============================================================
-describe('uploadBook', () => {
-  it('uploads a book and refreshes the list', async () => {
-    mockBooksApi.upload.mockResolvedValue({ ok: true, id: 'Imported/New Book.epub' })
-    mockBooksApi.list.mockResolvedValue([makeBook({ id: 'Imported/New Book.epub', title: 'New Book' })])
-
-    const store = useBooksStore()
-    const file = new File(['content'], 'New Author - New Book.epub', {
-      type: 'application/epub+zip',
+      expect(store.books).toHaveLength(3)
+      expect(store.bookCount).toBe(3)
+      expect(store.loading).toBe(false)
+      expect(store.error).toBeNull()
     })
 
-    await store.uploadBook(file)
+    it('records the error and falls back to an empty library', async () => {
+      holders.listEffect = Effect.fail(new HttpError(500, 'scan failed'))
+      const store = useBooksStore()
 
-    expect(mockBooksApi.upload).toHaveBeenCalledWith(file)
-    expect(store.books[0].title).toBe('New Book')
+      await store.fetchBooks()
+
+      expect(store.books).toEqual([])
+      expect(store.error).toBe('scan failed')
+      expect(store.loading).toBe(false)
+    })
   })
 
-  it('handles upload error and re-throws', async () => {
-    mockBooksApi.upload.mockRejectedValue(new Error('File too large'))
+  describe('search', () => {
+    it('matches titles case-insensitively', async () => {
+      const store = useBooksStore()
+      await store.fetchBooks()
 
-    const store = useBooksStore()
-    const file = new File(['content'], 'large.epub', { type: 'application/epub+zip' })
+      store.setSearch('APP')
+      expect(store.filteredBooks.map((b) => b.title)).toEqual(['Apple'])
+    })
 
-    await expect(store.uploadBook(file)).rejects.toThrow('File too large')
-    expect(store.error).toBe('File too large')
+    it('matches authors as well as titles', async () => {
+      const store = useBooksStore()
+      await store.fetchBooks()
+
+      store.setSearch('bob')
+      expect(store.filteredBooks.map((b) => b.title)).toEqual(['Mango'])
+    })
+
+    it('returns everything for an empty query', async () => {
+      const store = useBooksStore()
+      await store.fetchBooks()
+
+      store.setSearch('')
+      expect(store.filteredBooks).toHaveLength(3)
+    })
   })
-})
 
-// ============================================================
-// Book entity integrity
-// ============================================================
-describe('book entities', () => {
-  it('each book has required fields', async () => {
-    mockBooksApi.list.mockResolvedValue([
-      makeBook({ id: 'verify.epub', format: 'epub' }),
-    ])
+  describe('sorting', () => {
+    it('sorts by title ascending by default', async () => {
+      const store = useBooksStore()
+      await store.fetchBooks()
 
-    const store = useBooksStore()
-    await store.fetchBooks()
+      expect(store.filteredBooks.map((b) => b.title)).toEqual(['Apple', 'Mango', 'Zebra'])
+    })
 
-    const book = store.books[0]
-    expect(book.id).toBeTruthy()
-    expect(book.title).toBeTruthy()
-    expect(book.author).toBeTruthy()
-    expect(book.format).toBeTruthy()
-    expect(book.size).toBeGreaterThan(0)
-    expect(book.mtime).toBeInstanceOf(Date)
+    it('sorts by author', async () => {
+      const store = useBooksStore()
+      await store.fetchBooks()
+
+      store.setSort('author')
+      expect(store.filteredBooks.map((b) => b.author)).toEqual(['Alice', 'Bob', 'Zoe'])
+    })
+
+    it('defaults size and mtime to descending', async () => {
+      const store = useBooksStore()
+      await store.fetchBooks()
+
+      store.setSort('size')
+      expect(store.order).toBe('desc')
+      expect(store.filteredBooks.map((b) => b.size)).toEqual([300, 200, 100])
+
+      store.setSort('mtime')
+      expect(store.order).toBe('desc')
+      expect(store.filteredBooks.map((b) => b.mtime)).toEqual([
+        '2024-03-01T00:00:00.000Z',
+        '2024-02-01T00:00:00.000Z',
+        '2024-01-01T00:00:00.000Z',
+      ])
+    })
+
+    it('toggles order when sorting by the same field twice', async () => {
+      const store = useBooksStore()
+      await store.fetchBooks()
+
+      store.setSort('title')
+      expect(store.order).toBe('desc')
+      expect(store.filteredBooks.map((b) => b.title)).toEqual(['Zebra', 'Mango', 'Apple'])
+
+      store.setSort('title')
+      expect(store.order).toBe('asc')
+      expect(store.filteredBooks.map((b) => b.title)).toEqual(['Apple', 'Mango', 'Zebra'])
+    })
+
+    it('setOrder and toggleOrder work independently', async () => {
+      const store = useBooksStore()
+      await store.fetchBooks()
+
+      store.setOrder('desc')
+      expect(store.filteredBooks.map((b) => b.title)).toEqual(['Zebra', 'Mango', 'Apple'])
+
+      store.toggleOrder()
+      expect(store.order).toBe('asc')
+    })
+  })
+
+  describe('uploadBook', () => {
+    it('refetches the library after a successful upload', async () => {
+      const store = useBooksStore()
+      const file = new File(['x'], 'New.epub', { type: 'application/epub+zip' })
+
+      await store.uploadBook(file)
+
+      expect(uploadMock).toHaveBeenCalledWith(file)
+      // The library is fetched again so the uploaded book shows up
+      expect(store.books).toHaveLength(3)
+      expect(store.error).toBeNull()
+    })
+
+    it('records the error and throws a plain Error on failure', async () => {
+      uploadMock.mockReturnValue(Effect.fail(new HttpError(413, 'File too large')))
+      const store = useBooksStore()
+
+      await expect(store.uploadBook(new File(['x'], 'Big.epub'))).rejects.toThrow('File too large')
+      expect(store.error).toBe('File too large')
+    })
   })
 })

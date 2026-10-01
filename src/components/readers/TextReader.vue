@@ -7,6 +7,8 @@ defineProps<{
 <template>
   <iframe
     :src="contentUrl"
+    sandbox=""
+    title="Book content"
     class="w-full h-full border-0 bg-card p-8 font-serif text-lg leading-relaxed max-w-3xl mx-auto"
   />
 </template>

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { Effect, pipe } from 'effect'
 import { ProfileApi } from '@/services/api'
+import { useProgressStore } from '@/stores/progress'
 import type { Profile } from '@/types'
 
 export const useProfilesStore = defineStore('profiles', () => {
@@ -58,8 +59,12 @@ export const useProfilesStore = defineStore('profiles', () => {
   }
 
   function setActiveProfile(id: string) {
+    if (id === activeId.value) return
     activeId.value = id
     persistActiveProfile(id)
+    // Progress is per-profile — drop the previous profile's cached entries
+    // so BookCard bars and "currently reading" can't leak across profiles.
+    useProgressStore().clearProgress()
   }
 
   return {

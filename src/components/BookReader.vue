@@ -3,7 +3,7 @@ import EpubReader from '@/components/readers/EpubReader.vue'
 import PdfReader from '@/components/readers/PdfReader.vue'
 import TextReader from '@/components/readers/TextReader.vue'
 
-const props = defineProps<{
+defineProps<{
   bookId: string
   format: string
   contentUrl: string

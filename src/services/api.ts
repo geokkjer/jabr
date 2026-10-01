@@ -3,7 +3,7 @@
  * Each service is a plain object whose methods return Effect values.
  */
 import { Effect, Schema, pipe } from "effect"
-import { fetchJsonSafe, mutateJson, mutateFormData, retryOnNetworkError } from "./http-client"
+import { fetchJsonSafe, mutateJson, fetchEffect, parseJson, retryOnNetworkError } from "./http-client"
 
 const BASE = "/api"
 
@@ -105,13 +105,10 @@ export const BookApi = {
       }),
       Effect.flatMap((form) =>
         pipe(
-          Effect.tryPromise(() =>
-            fetch(`${BASE}/upload`, { method: "POST", body: form }),
-          ),
-          Effect.flatMap((res) =>
-            res.ok
-              ? Effect.tryPromise(() => res.json() as Promise<{ ok: boolean; id: string }>)
-              : Effect.tryPromise(() => res.text().then((t) => Promise.reject(new Error(t)))),
+          fetchEffect(`${BASE}/books/upload`, { method: "POST", body: form }),
+          Effect.flatMap(parseJson),
+          Effect.flatMap(
+            Schema.decodeUnknown(Schema.Struct({ ok: Schema.Boolean, id: Schema.String })),
           ),
         ),
       ),
@@ -137,6 +134,12 @@ export const ProfileApi = {
 // ── Progress API ───────────────────────────────────────────────
 
 export const ProgressApi = {
+  listRecent: (profileId: string) =>
+    pipe(
+      fetchJsonSafe(`${BASE}/progress?profileId=${encodeURIComponent(profileId)}`),
+      Effect.flatMap(Schema.decodeUnknown(Schema.Array(BookProgressSchema))),
+    ),
+
   get: (profileId: string, bookId: string) =>
     pipe(
       fetchJsonSafe(
@@ -198,9 +201,9 @@ export const SettingsApi = {
 // ── Migration API ─────────────────────────────────────────────
 
 export const MigrationApi = {
-  run: (options?: { dryRun?: boolean; profileName?: string }) =>
+  run: (options: { libraryPath: string; dryRun?: boolean; preferFormat?: string }) =>
     pipe(
-      mutateJson(`${BASE}/migrate`, "POST", options ?? {}),
+      mutateJson(`${BASE}/settings/migrate`, "POST", options),
       Effect.flatMap(Schema.decodeUnknown(MigrateResultSchema)),
     ),
 }

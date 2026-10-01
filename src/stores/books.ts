@@ -89,18 +89,21 @@ export const useBooksStore = defineStore('books', () => {
   }
 
   async function uploadBook(file: File) {
-    const result = await Effect.runPromise(
+    const failed = await Effect.runPromise(
       pipe(
         BookApi.upload(file),
-        Effect.tap(() => fetchBooks()),
+        // Refetch after a successful upload so the new book appears
+        Effect.flatMap(() => Effect.promise(() => fetchBooks())),
+        Effect.as(false),
         Effect.catchAll((err) => {
           error.value = err.message
-          return Effect.fail(err)
+          return Effect.succeed(true)
         }),
       ),
     )
 
-    if (result instanceof Error) throw result
+    // Surface a plain Error so callers can show err.message directly
+    if (failed) throw new Error(error.value ?? 'Upload failed')
   }
 
   return {

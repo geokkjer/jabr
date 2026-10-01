@@ -81,7 +81,7 @@ export const useSettingsStore = defineStore('settings', () => {
 
     await Effect.runPromise(
       pipe(
-        SettingsApi.reset,
+        SettingsApi.reset(),
         Effect.catchAll((err) => {
           error.value = err.message
           return Effect.fail(err)

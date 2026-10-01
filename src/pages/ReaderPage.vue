@@ -13,7 +13,8 @@ const router = useRouter()
 const profilesStore = useProfilesStore()
 const progressStore = useProgressStore()
 
-const bookId = computed(() => decodeURIComponent(route.params.id as string))
+// vue-router already decodes route params — decoding again corrupts ids containing '%'
+const bookId = computed(() => route.params.id as string)
 const book = ref<Book | null>(null)
 const contentUrl = ref('')
 const loading = ref(true)

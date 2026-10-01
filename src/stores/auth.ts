@@ -17,7 +17,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     const result = await Effect.runPromise(
       pipe(
-        AuthApi.status,
+        AuthApi.status(),
         Effect.catchAll(() => Effect.succeed({ authEnabled: false })),
       ),
     )
@@ -35,12 +35,17 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
 
     try {
-      await Effect.runPromise(AuthApi.login(username, password))
+      await Effect.runPromise(
+        pipe(
+          AuthApi.login(username, password),
+          // Read the typed error before runPromise turns it into a FiberFailure
+          Effect.catchAll((err) => {
+            error.value = err.message
+            return Effect.fail(err)
+          }),
+        ),
+      )
       isAuthenticated.value = true
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : 'Login failed'
-      error.value = message
-      throw e
     } finally {
       loading.value = false
     }
@@ -49,7 +54,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function logout() {
     await Effect.runPromise(
       pipe(
-        AuthApi.logout,
+        AuthApi.logout(),
         Effect.catchAll(() => Effect.succeed(undefined)),
       ),
     )
