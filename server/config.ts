@@ -4,9 +4,14 @@ import { statSync } from 'node:fs'
 export const PORT = Number(process.env.JABR_PORT) || 3001
 export const NODE_ENV = process.env.NODE_ENV || 'development'
 
-export const DB_PATH = process.env.JABR_DB_PATH
-  ? resolve(process.env.JABR_DB_PATH)
-  : resolve(process.cwd(), 'data', 'jabr.sqlite3')
+// ':memory:' must not be resolved to a cwd-relative file path —
+// better-sqlite3 treats the literal string as a true in-memory database.
+export const DB_PATH =
+  process.env.JABR_DB_PATH === ':memory:'
+    ? ':memory:'
+    : process.env.JABR_DB_PATH
+      ? resolve(process.env.JABR_DB_PATH)
+      : resolve(process.cwd(), 'data', 'jabr.sqlite3')
 
 export function getBooksDir(): string {
   const configured = process.env.JABR_BOOKS_PATH

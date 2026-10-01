@@ -1,8 +1,23 @@
 import { Router } from 'express'
 import type { Request, Response } from 'express'
-import { getBookProgress, upsertBookProgress } from '../db.js'
+import { getBookProgress, listRecentProgress, upsertBookProgress } from '../db.js'
 
 export const progressRouter = Router()
+
+// GET /api/progress?profileId=... — recent progress for "currently reading"
+progressRouter.get('/', (req: Request, res: Response) => {
+  try {
+    const profileId = req.query.profileId as string
+    if (!profileId) {
+      res.status(400).json({ error: 'Missing profileId' })
+      return
+    }
+    res.json(listRecentProgress(profileId, 20))
+  } catch (e) {
+    console.error('Failed to list progress:', e)
+    res.status(500).json({ error: 'Failed to list progress' })
+  }
+})
 
 progressRouter.get('/:bookId', (req: Request, res: Response) => {
   try {

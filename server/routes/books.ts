@@ -1,7 +1,6 @@
 import { Router } from 'express'
 import multer from 'multer'
-import { join, extname, basename, resolve, relative, sep, dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join, extname, basename, resolve, relative, sep } from 'node:path'
 import { createWriteStream, existsSync, statSync, createReadStream } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { Readable } from 'node:stream'
@@ -16,7 +15,7 @@ import {
   SAFE_FILENAME_PATTERN,
 } from '../config.js'
 import { searchBookIndex, getBookIndex } from '../db.js'
-import { scanAndIndex, ensureBooksDir } from '../scanner.js'
+import { scanAndIndex, ensureBooksDir, invalidateScanCache } from '../scanner.js'
 
 export const booksRouter = Router()
 export const bookFileRouter = Router()
@@ -83,9 +82,12 @@ booksRouter.get('/:id', async (req: Request, res: Response) => {
 })
 
 // GET /api/book/* - serve book file
-bookFileRouter.get('*', (req: Request, res: Response) => {
+// Express 5 requires a named wildcard; bare '*' throws at startup.
+bookFileRouter.get('/*splat', (req: Request, res: Response) => {
   try {
-    const path = req.path.replace(/^\//, '')
+    // req.path keeps percent-encoding; decode so 'Author%20-%20Book.epub'
+    // resolves to the real filename on disk.
+    const path = decodeURIComponent(req.path).replace(/^\//, '')
     if (!path) {
       res.status(400).json({ error: 'Missing path' })
       return
@@ -166,6 +168,9 @@ booksRouter.post('/upload', upload.single('file'), async (req: Request, res: Res
     const destPath = join(importedDir, finalName)
 
     await pipeline(Readable.from(req.file.buffer), createWriteStream(destPath))
+
+    // The new file must show up in the next /api/books response immediately
+    invalidateScanCache()
 
     res.json({ ok: true, id: join('Imported', finalName) })
   } catch (e) {

@@ -5,7 +5,7 @@ import {
   getSetting,
   setSetting,
   listProfiles,
-  listRecentProgress,
+  listAllProgress,
   resetDatabase,
 } from '../db.js'
 import { migrateFromCalibre } from '../migrate.js'
@@ -86,7 +86,7 @@ settingsRouter.post('/migrate', async (req: Request, res: Response) => {
 settingsRouter.get('/export', async (_req: Request, res: Response) => {
   try {
     const profiles = listProfiles()
-    const progress = listRecentProgress('', 10000)
+    const progress = listAllProgress(10000)
     const settings: Record<string, string | null> = {}
     const keys = ['libraryPath', 'authEnabled', 'username', 'password', 'readerTarget']
     for (const key of keys) {

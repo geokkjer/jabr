@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os'
 
 import { app } from '../index.js'
 import { resetDatabase } from '../db.js'
+import { invalidateScanCache } from '../scanner.js'
 
 let server: Server
 let baseUrl: string
@@ -44,6 +45,7 @@ afterAll(() => {
 
 beforeEach(() => {
   resetDatabase()
+  invalidateScanCache()
 })
 
 async function api(path: string, options: RequestInit = {}) {
@@ -132,16 +134,30 @@ describe('GET /api/books/search', () => {
 })
 
 // ============================================================
-// Book serving — GET /api/book/:path
+// Book serving — GET /api/book/*
 // ============================================================
-describe('GET /api/book/:path', () => {
-  // NOTE: Express `app.use('/api/book', handler)` strips the mount prefix
-  // from `req.path`. The handler expects the full path via Vite proxy.
-  // When accessed directly, non-existent paths resolve to absolute paths
-  // triggering the traversal check → 403 rather than the expected 404.
-  it('returns 403 for unknown book (mount prefix path resolution)', async () => {
+describe('GET /api/book/*', () => {
+  it('serves an existing book file with correct content type', async () => {
+    const res = await fetch(`${baseUrl}/api/book/${encodeURIComponent('Test Author - Test Book.epub')}`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('application/epub+zip')
+    const text = await res.text()
+    expect(text).toBe('mock epub content')
+  })
+
+  it('serves files from subdirectories', async () => {
+    mkdirSync(join(tmpDir, 'Subdir'), { recursive: true })
+    writeFileSync(join(tmpDir, 'Subdir', 'Nested - Book.txt'), 'nested content')
+    const res = await fetch(
+      `${baseUrl}/api/book/${encodeURIComponent('Subdir/Nested - Book.txt')}`
+    )
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe('nested content')
+  })
+
+  it('returns 404 for unknown book', async () => {
     const { status } = await api('/api/book/nonexistent.epub')
-    expect(status).toBeOneOf([403, 404])
+    expect(status).toBe(404)
   })
 
   it('returns 403 for disallowed file type', async () => {
@@ -151,7 +167,7 @@ describe('GET /api/book/:path', () => {
   })
 
   it('prevents directory traversal (..)', async () => {
-    const { status } = await api('/api/book/../etc/passwd')
+    const { status } = await api('/api/book/..%2F..%2Fetc%2Fpasswd')
     expect(status).toBeOneOf([403, 404])
   })
 })
@@ -159,7 +175,7 @@ describe('GET /api/book/:path', () => {
 // ============================================================
 // Upload — covers UploadBook rule
 // ============================================================
-describe('POST /api/upload', () => {
+describe('POST /api/books/upload', () => {
   it('accepts a valid epub file', async () => {
     const form = new FormData()
     const file = new File(['mock content'], 'New Author - New Book.epub', {
@@ -167,7 +183,7 @@ describe('POST /api/upload', () => {
     })
     form.append('file', file)
 
-    const res = await fetch(`${baseUrl}/api/upload`, {
+    const res = await fetch(`${baseUrl}/api/books/upload`, {
       method: 'POST',
       body: form,
     })
@@ -184,7 +200,7 @@ describe('POST /api/upload', () => {
     })
     form.append('file', file)
 
-    const res = await fetch(`${baseUrl}/api/upload`, {
+    const res = await fetch(`${baseUrl}/api/books/upload`, {
       method: 'POST',
       body: form,
     })
@@ -192,7 +208,7 @@ describe('POST /api/upload', () => {
   })
 
   it('responds with error when no file is provided', async () => {
-    const { status } = await api('/api/upload', { method: 'POST', body: '{}' })
+    const { status } = await api('/api/books/upload', { method: 'POST', body: '{}' })
     expect(status).toBe(400)
   })
 })
@@ -440,9 +456,9 @@ describe('Auth API', () => {
 // ============================================================
 // Export — black box, verifies it exists
 // ============================================================
-describe('GET /api/export', () => {
+describe('GET /api/settings/export', () => {
   it('returns a JSON backup', async () => {
-    const res = await fetch(`${baseUrl}/api/export`)
+    const res = await fetch(`${baseUrl}/api/settings/export`)
     expect(res.status).toBe(200)
     const ct = res.headers.get('content-type') || ''
     expect(ct).toContain('application/json')

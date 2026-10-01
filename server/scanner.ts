@@ -1,6 +1,6 @@
 import { readdir, stat, mkdir } from 'node:fs/promises'
 import { existsSync, statSync } from 'node:fs'
-import { join, extname, relative, resolve, dirname } from 'node:path'
+import { join, extname, relative, dirname } from 'node:path'
 import { getBooksDir, ALLOWED_EXTENSIONS_SET, BOOK_SCAN_CACHE_TTL_MS } from './config.js'
 import { upsertBookIndex, cleanupBookIndex } from './db.js'
 import type { BookIndex } from './db.js'

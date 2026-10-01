@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import type { Request, Response } from 'express'
-import { getSetting, setSetting } from '../db.js'
+import { getSetting } from '../db.js'
 import { AUTH_COOKIE_NAME, AUTH_COOKIE_MAX_AGE_SECONDS } from '../config.js'
 
 export const authRouter = Router()

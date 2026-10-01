@@ -149,6 +149,16 @@ export function listRecentProgress(profileId: string, limit: number): BookProgre
     .all(profileId, limit) as BookProgress[]
 }
 
+/** All progress rows across profiles (for backup export) */
+export function listAllProgress(limit: number): BookProgress[] {
+  const db = getDb()
+  return db
+    .prepare(
+      'SELECT profile_id as profileId, book_id as bookId, format, location_json as locationJson, percent, updated_at as updatedAt FROM book_progress ORDER BY updated_at DESC LIMIT ?'
+    )
+    .all(limit) as BookProgress[]
+}
+
 export function getBookProgress(profileId: string, bookId: string): BookProgress | null {
   const db = getDb()
   const row = db

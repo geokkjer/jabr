@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import {
   PORT,
   NODE_ENV,
+  DB_PATH,
   getBooksDir,
 } from './config.js'
 import { getDb } from './db.js'
@@ -48,7 +49,7 @@ if (NODE_ENV !== 'test') {
   app.listen(PORT, () => {
     console.log(`JABR server running on port ${PORT}`)
     console.log(`Books directory: ${getBooksDir()}`)
-    console.log(`Database: ${resolve(process.cwd(), 'data', 'jabr.sqlite3')}`)
+    console.log(`Database: ${DB_PATH}`)
   })
 }
 
