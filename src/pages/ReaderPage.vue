@@ -35,9 +35,10 @@ onMounted(async () => {
 
   // Opening the reader directly (deep link, bookmark, reload) never runs
   // LibraryPage, so the profile list would be empty and no reading progress
-  // could be loaded or saved. Load it here too.
+  // could be loaded or saved. ensureDefaultProfile is idempotent and also
+  // creates the starter profile on a fresh install.
   if (profilesStore.profiles.length === 0) {
-    await profilesStore.fetchProfiles()
+    await profilesStore.ensureDefaultProfile()
   }
 
   if (!result) {

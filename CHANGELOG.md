@@ -2,6 +2,16 @@
 
 Notable changes, newest first. This project follows [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+- **A fresh install starts with a reading profile called "Me"**, renameable in
+  Settings, instead of silently failing to save progress until you created one
+  by hand. `POST /api/profiles/default` is idempotent; `PATCH /api/profiles/:id`
+  renames.
+- Fixed the Kubernetes backup CronJob: the script was mounted outside `/app`,
+  so `require('better-sqlite3')` could not resolve and the job failed. Found by
+  applying the manifests to a live cluster.
+
 ## 0.1.0-beta.1
 
 First beta. JABR is a self-hosted e-book reader for a trusted internal network:
@@ -15,7 +25,8 @@ profile. EPUB via epub.js, PDF via pdf.js, plain text and Markdown as-is.
 - **Reading** — EPUB, PDF and text readers with progress tracked per profile and
   restored on reopen, including when a book is opened directly by URL.
 - **Profiles** — separate reading positions for different people (or moods).
-  Profiles are a reading-state selector, not a security boundary.
+  A fresh install starts with one called *Me*, renameable in Settings. Profiles
+  are a reading-state selector, not a security boundary.
 - **Deployment** — single container, unprivileged, ~182 MB; Compose file and
   Kubernetes manifests with probes, persistent volumes and a nightly backup
   CronJob. Graceful shutdown on `SIGTERM`.

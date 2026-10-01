@@ -79,6 +79,8 @@ This fires up two things in parallel:
 
 Vite proxies `/api/*` to the Express server automatically. It's like magic, but with less smoke and mirrors and more `vite.config.ts`.
 
+On first load the app creates a starter reading profile called **Me** so reading progress has somewhere to go immediately. Rename it (or add others) on the Settings page.
+
 ### Production Build
 
 ```sh
@@ -123,6 +125,8 @@ All endpoints live under `/api`. Every response is JSON unless it's a book file,
 | `POST` | `/api/books/upload` | Upload a book (multipart form, max 512MB) |
 | `GET` | `/api/profiles` | List reading profiles |
 | `POST` | `/api/profiles` | Create a profile (body: `{ "name": "string" }`) |
+| `POST` | `/api/profiles/default` | Idempotently create the starter "Me" profile |
+| `PATCH` | `/api/profiles/:id` | Rename a profile (body: `{ "name": "string" }`) |
 | `GET` | `/api/progress/:bookId?profileId=` | Get reading progress for a book+profile combo |
 | `GET` | `/api/progress?profileId=` | Recent progress for a profile ("currently reading") |
 | `PUT` | `/api/progress/:bookId` | Save reading progress (upserts, because race conditions are for other people) |

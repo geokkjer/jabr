@@ -280,20 +280,15 @@ try {
   await session.screenshot('4-pdf-scrolled.png')
 
   // ── 4. Progress round-trip ────────────────────────────────────────────────
-  // Reading progress needs a profile, which a fresh install does not have yet —
-  // the same one a user would create on the Settings page.
-  let profiles = await (await fetch(`${BASE}/api/profiles`)).json()
-  if (!Array.isArray(profiles) || profiles.length === 0) {
-    console.log('         (no profile yet — creating one, as Settings would)')
-    await fetch(`${BASE}/api/profiles`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Live Test' }),
-    })
-    profiles = await (await fetch(`${BASE}/api/profiles`)).json()
-  }
+  // A fresh install has no profile: the app is expected to create a starter
+  // one ("Me") on first load so reading progress has somewhere to go.
+  const profiles = await (await fetch(`${BASE}/api/profiles`)).json()
+  check(
+    'starter profile exists automatically',
+    Array.isArray(profiles) && profiles.length === 1 && profiles[0]?.name === 'Me',
+    JSON.stringify(profiles.map((p) => p.name)),
+  )
   const profileId = profiles[0]?.id
-  check('a profile exists for progress', Boolean(profileId))
   if (profileId) {
     // Give the reader a nudge so a save is triggered with a profile present
     await session.goto(`${BASE}/read/${encodeURIComponent(epubPath)}`, 3000)

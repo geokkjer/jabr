@@ -120,6 +120,13 @@ export function createProfile(name: string): Profile {
   return { id, name, createdAt }
 }
 
+export function renameProfile(id: string, name: string): Profile | null {
+  const db = getDb()
+  const result = db.prepare('UPDATE profiles SET name = ? WHERE id = ?').run(name, id)
+  if (result.changes === 0) return null
+  return getProfile(id)
+}
+
 // Book Progress
 export function listRecentProgress(profileId: string, limit: number): BookProgress[] {
   const db = getDb()

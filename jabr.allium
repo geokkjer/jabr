@@ -98,6 +98,18 @@ rule CreateProfile {
     )
 }
 
+rule EnsureStarterProfile {
+    when: AppLoads(viewer)
+
+    ensures: Profile.created(id: generated, name: "Me", created_at: now)
+        when no Profile exists
+
+    @guidance
+        -- Reading progress needs a profile. A fresh install would otherwise
+        -- read fine and silently save nothing, so the app guarantees one and
+        -- the reader can rename it from Settings.
+}
+
 rule RecordReadingProgress {
     when: viewer: Reader.ReaderAdvances(book, location, percent)
 

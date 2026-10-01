@@ -19,7 +19,9 @@ vi.mock('@/services/api', () => ({
     get list() {
       return holders.listEffect
     },
+    ensureDefault: vi.fn<typeof ProfileApi.ensureDefault>(),
     create: vi.fn<typeof ProfileApi.create>(),
+    rename: vi.fn<typeof ProfileApi.rename>(),
   },
 }))
 
@@ -28,6 +30,8 @@ import { useProfilesStore } from '@/stores/profiles'
 import { useProgressStore } from '@/stores/progress'
 
 const createMock = vi.mocked(ProfileApi.create)
+const ensureDefaultMock = vi.mocked(ProfileApi.ensureDefault)
+const renameMock = vi.mocked(ProfileApi.rename)
 
 const alice: Profile = { id: 'p-alice', name: 'Alice', createdAt: 1 }
 const bob: Profile = { id: 'p-bob', name: 'Bob', createdAt: 2 }
@@ -39,6 +43,8 @@ describe('useProfilesStore', () => {
     vi.clearAllMocks()
     holders.listEffect = Effect.succeed([alice, bob])
     createMock.mockReturnValue(Effect.succeed({ id: 'p-new', name: 'New', createdAt: 3 }))
+    ensureDefaultMock.mockReturnValue(Effect.succeed([alice, bob]))
+    renameMock.mockReturnValue(Effect.succeed({ ...alice, name: 'Renamed' }))
   })
 
   describe('fetchProfiles', () => {
@@ -131,6 +137,61 @@ describe('useProfilesStore', () => {
       store.setActiveProfile(alice.id)
 
       expect(clearSpy).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('ensureDefaultProfile', () => {
+    it('uses the starter profile the server returns on a fresh install', async () => {
+      const starter: Profile = { id: 'p-me', name: 'Me', createdAt: 1 }
+      ensureDefaultMock.mockReturnValue(Effect.succeed([starter]))
+      const store = useProfilesStore()
+
+      await store.ensureDefaultProfile()
+
+      expect(store.profiles).toHaveLength(1)
+      expect(store.activeId).toBe('p-me')
+      expect(store.activeProfile?.name).toBe('Me')
+      expect(store.loading).toBe(false)
+    })
+
+    it('keeps the saved active profile when one exists', async () => {
+      localStorage.setItem('jabr-profile', bob.id)
+      const store = useProfilesStore()
+
+      await store.ensureDefaultProfile()
+
+      expect(store.activeId).toBe(bob.id)
+    })
+
+    it('records the error and leaves the list empty when the call fails', async () => {
+      ensureDefaultMock.mockReturnValue(Effect.fail(new HttpError(500, 'db down')))
+      const store = useProfilesStore()
+
+      await store.ensureDefaultProfile()
+
+      expect(store.profiles).toEqual([])
+      expect(store.error).toBe('db down')
+    })
+  })
+
+  describe('renameProfile', () => {
+    it('renames the starter profile in place', async () => {
+      const store = useProfilesStore()
+      await store.fetchProfiles()
+
+      await store.renameProfile(alice.id, 'Geir')
+
+      expect(renameMock).toHaveBeenCalledWith(alice.id, 'Geir')
+      expect(store.profiles.find((p) => p.id === alice.id)?.name).toBe('Renamed')
+    })
+
+    it('ignores a blank name without calling the API', async () => {
+      const store = useProfilesStore()
+      await store.fetchProfiles()
+
+      await store.renameProfile(alice.id, '   ')
+
+      expect(renameMock).not.toHaveBeenCalled()
     })
   })
 })

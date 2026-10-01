@@ -344,6 +344,71 @@ describe('Profiles API', () => {
     })
     expect(status).toBe(400)
   })
+
+  it('POST /api/profiles/default creates a starter profile on a fresh install', async () => {
+    const { status, body } = await api('/api/profiles/default', { method: 'POST' })
+
+    expect(status).toBe(200)
+    const profiles = body as Array<{ id: string; name: string }>
+    expect(profiles).toHaveLength(1)
+    expect(profiles[0]!.name).toBe('Me')
+  })
+
+  it('POST /api/profiles/default is idempotent and never duplicates', async () => {
+    await api('/api/profiles/default', { method: 'POST' })
+    await api('/api/profiles/default', { method: 'POST' })
+    await api('/api/profiles/default', { method: 'POST' })
+
+    const { body } = await api('/api/profiles')
+    expect(body as Array<unknown>).toHaveLength(1)
+  })
+
+  it('POST /api/profiles/default leaves existing profiles alone', async () => {
+    await api('/api/profiles', {
+      method: 'POST',
+      body: JSON.stringify({ name: 'Alice' }),
+    })
+
+    const { body } = await api('/api/profiles/default', { method: 'POST' })
+    const profiles = body as Array<{ name: string }>
+    expect(profiles).toHaveLength(1)
+    expect(profiles[0]!.name).toBe('Alice')
+  })
+
+  it('PATCH /api/profiles/:id renames a profile', async () => {
+    const { body: created } = await api('/api/profiles/default', { method: 'POST' })
+    const id = (created as Array<{ id: string }>)[0]!.id
+
+    const { status, body } = await api(`/api/profiles/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name: '  Geir  ' }),
+    })
+
+    expect(status).toBe(200)
+    expect((body as { name: string }).name).toBe('Geir')
+
+    const { body: listed } = await api('/api/profiles')
+    expect((listed as Array<{ name: string }>)[0]!.name).toBe('Geir')
+  })
+
+  it('PATCH /api/profiles/:id rejects an empty name', async () => {
+    const { body: created } = await api('/api/profiles/default', { method: 'POST' })
+    const id = (created as Array<{ id: string }>)[0]!.id
+
+    const { status } = await api(`/api/profiles/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name: '   ' }),
+    })
+    expect(status).toBe(400)
+  })
+
+  it('PATCH /api/profiles/:id returns 404 for an unknown profile', async () => {
+    const { status } = await api('/api/profiles/does-not-exist', {
+      method: 'PATCH',
+      body: JSON.stringify({ name: 'Nope' }),
+    })
+    expect(status).toBe(404)
+  })
 })
 
 // ============================================================

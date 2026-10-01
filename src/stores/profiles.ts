@@ -51,11 +51,43 @@ export const useProfilesStore = defineStore('profiles', () => {
     loading.value = false
   }
 
+  /**
+   * Guarantees at least one profile exists — the server creates a starter
+   * profile ("Me") on a fresh install — and makes it active. Safe to call on
+   * every page load: the endpoint is idempotent.
+   */
+  async function ensureDefaultProfile() {
+    loading.value = true
+    error.value = null
+
+    const result = await Effect.runPromise(
+      pipe(
+        ProfileApi.ensureDefault(),
+        Effect.catchAll((err) => {
+          error.value = err.message
+          return Effect.succeed([])
+        }),
+      ),
+    )
+    profiles.value = result as Profile[]
+    restoreActiveProfile()
+    loading.value = false
+  }
+
   async function createProfile(name: string) {
-    const profile = await Effect.runPromise(ProfileApi.create(name))
-    profiles.value.push(profile as Profile)
-    activeId.value = (profile as Profile).id
-    persistActiveProfile((profile as Profile).id)
+    const created = (await Effect.runPromise(ProfileApi.create(name))) as Profile
+    profiles.value.push(created)
+    activeId.value = created.id
+    persistActiveProfile(created.id)
+  }
+
+  async function renameProfile(id: string, name: string) {
+    const trimmed = name.trim()
+    if (!trimmed) return
+
+    const updated = (await Effect.runPromise(ProfileApi.rename(id, trimmed))) as Profile
+    const existing = profiles.value.find((p) => p.id === id)
+    if (existing) existing.name = updated.name
   }
 
   function setActiveProfile(id: string) {
@@ -74,7 +106,9 @@ export const useProfilesStore = defineStore('profiles', () => {
     error,
     activeProfile,
     fetchProfiles,
+    ensureDefaultProfile,
     createProfile,
+    renameProfile,
     setActiveProfile,
   }
 })

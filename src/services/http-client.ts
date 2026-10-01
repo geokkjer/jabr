@@ -93,10 +93,10 @@ export const fetchJsonSafe = (
 ): Effect.Effect<unknown, FetchError> =>
   pipe(fetchJson(url, options), retryOnNetworkError)
 
-/** Mutating request (POST/PUT/DELETE) that returns JSON */
+/** Mutating request (POST/PUT/PATCH/DELETE) that returns JSON */
 export const mutateJson = (
   url: string,
-  method: "POST" | "PUT" | "DELETE",
+  method: "POST" | "PUT" | "PATCH" | "DELETE",
   body: unknown,
 ): Effect.Effect<unknown, FetchError> =>
   pipe(

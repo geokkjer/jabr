@@ -159,9 +159,22 @@ export const ProfileApi = {
     Effect.flatMap(Schema.decodeUnknown(Schema.Array(ProfileSchema))),
   ),
 
+  /** Creates the starter profile on a fresh install; idempotent. */
+  ensureDefault: () =>
+    pipe(
+      mutateJson(`${BASE}/profiles/default`, "POST", {}),
+      Effect.flatMap(Schema.decodeUnknown(Schema.Array(ProfileSchema))),
+    ),
+
   create: (name: string) =>
     pipe(
       mutateJson(`${BASE}/profiles`, "POST", { name }),
+      Effect.flatMap(Schema.decodeUnknown(ProfileSchema)),
+    ),
+
+  rename: (id: string, name: string) =>
+    pipe(
+      mutateJson(`${BASE}/profiles/${encodeURIComponent(id)}`, "PATCH", { name }),
       Effect.flatMap(Schema.decodeUnknown(ProfileSchema)),
     ),
 }

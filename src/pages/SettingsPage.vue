@@ -13,13 +13,33 @@ const { error: adminError } = storeToRefs(adminStore)
 const { profiles, activeId, loading: profilesLoading } = storeToRefs(profilesStore)
 
 const newProfileName = ref('')
+const editingId = ref('')
+const editingName = ref('')
 const resetBusy = ref(false)
 const message = ref('')
 const showResetConfirm = ref(false)
 
 onMounted(async () => {
-  await profilesStore.fetchProfiles()
+  await profilesStore.ensureDefaultProfile()
 })
+
+function startRename(id: string, currentName: string) {
+  editingId.value = id
+  editingName.value = currentName
+}
+
+function cancelRename() {
+  editingId.value = ''
+  editingName.value = ''
+}
+
+async function saveRename(id: string) {
+  const name = editingName.value.trim()
+  if (!name) return
+  await profilesStore.renameProfile(id, name)
+  cancelRename()
+  showMessage('Profile renamed.')
+}
 
 function showMessage(msg: string) {
   message.value = msg
@@ -139,17 +159,49 @@ async function exportBackup() {
             <div
               v-for="profile in profiles"
               :key="profile.id"
-              class="flex items-center justify-between p-3 rounded-xl bg-parchment border-2 border-coffee/10"
+              class="flex items-center justify-between gap-3 p-3 rounded-xl bg-parchment border-2 border-coffee/10"
             >
-              <span class="font-bold text-coffee">{{ profile.name }}</span>
-              <button
-                v-if="profile.id !== activeId"
-                class="text-sm font-bold text-ocher hover:text-ocher/80 transition-colors"
-                @click="profilesStore.setActiveProfile(profile.id)"
-              >
-                Select
-              </button>
-              <span v-else class="text-sm font-bold text-sage">Active</span>
+              <template v-if="editingId === profile.id">
+                <input
+                  v-model="editingName"
+                  type="text"
+                  class="flex-1 px-3 py-2 bg-card text-coffee font-bold border-2 border-coffee rounded-lg focus:outline-none"
+                  @keyup.enter="saveRename(profile.id)"
+                  @keyup.esc="cancelRename"
+                />
+                <button
+                  class="px-3 py-2 bg-forest text-parchment font-bold border-2 border-coffee rounded-lg hover:shadow-brutal transition-all"
+                  @click="saveRename(profile.id)"
+                >
+                  Save
+                </button>
+                <button
+                  class="px-3 py-2 bg-card text-coffee font-bold border-2 border-coffee rounded-lg hover:shadow-brutal transition-all"
+                  @click="cancelRename"
+                >
+                  Cancel
+                </button>
+              </template>
+
+              <template v-else>
+                <span class="font-bold text-coffee">{{ profile.name }}</span>
+                <div class="flex items-center gap-3">
+                  <button
+                    class="text-sm font-bold text-leather hover:text-coffee transition-colors"
+                    @click="startRename(profile.id, profile.name)"
+                  >
+                    Rename
+                  </button>
+                  <button
+                    v-if="profile.id !== activeId"
+                    class="text-sm font-bold text-ocher hover:text-ocher/80 transition-colors"
+                    @click="profilesStore.setActiveProfile(profile.id)"
+                  >
+                    Select
+                  </button>
+                  <span v-else class="text-sm font-bold text-sage">Active</span>
+                </div>
+              </template>
             </div>
           </div>
 

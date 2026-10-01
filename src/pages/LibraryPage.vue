@@ -24,8 +24,10 @@ const uploadSummary = ref<string | null>(null)
 const uploadFailures = ref<Array<{ path: string; reason: string }>>([])
 
 onMounted(async () => {
+  // A fresh install has no profile; the server creates a starter one so
+  // reading works straight away and progress has somewhere to go.
   await Promise.all([
-    profilesStore.fetchProfiles(),
+    profilesStore.ensureDefaultProfile(),
     booksStore.fetchBooks(),
   ])
   // Needs an active profile first, so runs after the parallel fetch
