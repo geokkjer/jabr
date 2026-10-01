@@ -1,13 +1,19 @@
 /**
  * API integration tests — covers rules: RefreshLibrary, UploadBook,
- * CreateProfile, RecordReadingProgress, Login, Logout, UpdateSettings,
- * ToggleAuthentication, MigrateFromCalibre.
+ * CreateProfile, RecordReadingProgress, plus backup export and data reset.
  */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest'
 import { createServer } from 'node:http'
 import type { Server } from 'node:http'
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import {
+  mkdtempSync,
+  writeFileSync,
+  readFileSync,
+  existsSync,
+  rmSync,
+  mkdirSync,
+} from 'node:fs'
+import { join, relative, isAbsolute } from 'node:path'
 import { tmpdir } from 'node:os'
 
 import { app } from '../index.js'
@@ -173,43 +179,126 @@ describe('GET /api/book/*', () => {
 })
 
 // ============================================================
-// Upload — covers UploadBook rule
+// Upload — covers UploadBook rule (POST /api/books/upload, field `files`)
 // ============================================================
+interface UploadEntry {
+  path: string
+  status: 'imported' | 'skipped' | 'failed'
+  reason: string | null
+}
+
+interface UploadBody {
+  ok: boolean
+  imported: number
+  skipped: number
+  failed: number
+  files: UploadEntry[]
+}
+
+/** Force a multipart filename the way a browser's folder picker would. */
+function fileNamed(name: string, contents: string): File {
+  const file = new File([contents], name, { type: 'application/octet-stream' })
+  Object.defineProperty(file, 'name', { value: name })
+  return file
+}
+
+async function upload(files: File[]): Promise<{ status: number; body: UploadBody }> {
+  const form = new FormData()
+  for (const file of files) form.append('files', file)
+
+  const res = await fetch(`${baseUrl}/api/books/upload`, { method: 'POST', body: form })
+  return { status: res.status, body: (await res.json()) as UploadBody }
+}
+
 describe('POST /api/books/upload', () => {
-  it('accepts a valid epub file', async () => {
-    const form = new FormData()
-    const file = new File(['mock content'], 'New Author - New Book.epub', {
-      type: 'application/epub+zip',
-    })
-    form.append('file', file)
+  it('imports multiple files in a single request', async () => {
+    const { status, body } = await upload([
+      new File(['mock content'], 'New Author - New Book.epub', { type: 'application/epub+zip' }),
+      new File(['%PDF-1.4 mock'], 'Manual.pdf', { type: 'application/pdf' }),
+      new File(['plain'], 'Notes.txt', { type: 'text/plain' }),
+    ])
 
-    const res = await fetch(`${baseUrl}/api/books/upload`, {
-      method: 'POST',
-      body: form,
-    })
-    const body = await res.json()
-    expect(res.status).toBe(200)
+    expect(status).toBe(200)
     expect(body.ok).toBe(true)
-    expect(body.id).toContain('Imported')
+    expect(body.imported).toBe(3)
+    expect(body.skipped).toBe(0)
+    expect(body.failed).toBe(0)
+    expect(body.files).toHaveLength(3)
+    expect(body.files.every((f) => f.status === 'imported' && f.reason === null)).toBe(true)
+    expect(body.files.map((f) => f.path)).toContain('Imported/New Author - New Book.epub')
+    expect(existsSync(join(tmpDir, 'Imported', 'Manual.pdf'))).toBe(true)
+    expect(readFileSync(join(tmpDir, 'Imported', 'Notes.txt'), 'utf8')).toBe('plain')
   })
 
-  it('accepts a valid pdf file', async () => {
+  it('preserves the relative directory structure of a folder upload', async () => {
+    const { status, body } = await upload([
+      fileNamed('My Books/Author - Title.epub', 'nested epub'),
+    ])
+
+    expect(status).toBe(200)
+    expect(body.imported).toBe(1)
+    expect(body.files[0]!.path).toBe('Imported/My Books/Author - Title.epub')
+    expect(readFileSync(join(tmpDir, 'Imported', 'My Books', 'Author - Title.epub'), 'utf8')).toBe(
+      'nested epub',
+    )
+  })
+
+  it('suffixes collisions with (2) and never overwrites the original', async () => {
+    const first = await upload([new File(['first'], 'Duplicate.epub')])
+    const second = await upload([new File(['second'], 'Duplicate.epub')])
+    const third = await upload([new File(['third'], 'Duplicate.epub')])
+
+    expect(first.body.files[0]!.path).toBe('Imported/Duplicate.epub')
+    expect(second.body.files[0]!.path).toBe('Imported/Duplicate (2).epub')
+    expect(third.body.files[0]!.path).toBe('Imported/Duplicate (3).epub')
+
+    // No timestamp pollution, and the original content is intact
+    expect(readFileSync(join(tmpDir, 'Imported', 'Duplicate.epub'), 'utf8')).toBe('first')
+    expect(readFileSync(join(tmpDir, 'Imported', 'Duplicate (2).epub'), 'utf8')).toBe('second')
+  })
+
+  it('reports a disallowed extension as failed without writing it', async () => {
+    const { status, body } = await upload([
+      new File(['not a book'], 'Malware.exe', { type: 'application/octet-stream' }),
+      new File(['fine'], 'Keep.md'),
+    ])
+
+    expect(status).toBe(200)
+    expect(body.imported).toBe(1)
+    expect(body.failed).toBe(1)
+    const bad = body.files.find((f) => f.status === 'failed')
+    expect(bad?.path).toBe('Malware.exe')
+    expect(bad?.reason).toBeTruthy()
+    expect(existsSync(join(tmpDir, 'Imported', 'Malware.exe'))).toBe(false)
+    expect(existsSync(join(tmpDir, 'Imported', 'Keep.md'))).toBe(true)
+  })
+
+  it('flattens a traversal attempt into the books directory', async () => {
+    const { status, body } = await upload([
+      fileNamed('../../evil.epub', 'evil content'),
+    ])
+
+    expect(status).toBe(200)
+    expect(body.imported).toBe(1)
+
+    const entry = body.files[0]!
+    expect(entry.path).toBe('Imported/evil.epub')
+    expect(entry.path).not.toContain('..')
+    expect(isAbsolute(entry.path)).toBe(false)
+
+    const written = join(tmpDir, ...entry.path.split('/'))
+    expect(existsSync(written)).toBe(true)
+    // Lands inside the books dir, never outside it
+    const rel = relative(tmpDir, written)
+    expect(rel.startsWith('..')).toBe(false)
+    expect(rel).toBe(join('Imported', 'evil.epub'))
+    expect(existsSync(join(tmpDir, '..', 'evil.epub'))).toBe(false)
+  })
+
+  it('responds 400 when no files are provided', async () => {
     const form = new FormData()
-    const file = new File(['%PDF-1.4 mock'], 'Manual.pdf', {
-      type: 'application/pdf',
-    })
-    form.append('file', file)
-
-    const res = await fetch(`${baseUrl}/api/books/upload`, {
-      method: 'POST',
-      body: form,
-    })
-    expect(res.status).toBe(200)
-  })
-
-  it('responds with error when no file is provided', async () => {
-    const { status } = await api('/api/books/upload', { method: 'POST', body: '{}' })
-    expect(status).toBe(400)
+    const res = await fetch(`${baseUrl}/api/books/upload`, { method: 'POST', body: form })
+    expect(res.status).toBe(400)
   })
 })
 
@@ -289,11 +378,12 @@ describe('Progress API', () => {
     expect((body as Record<string, unknown>).percent).toBe(42.5)
   })
 
-  it('returns 404 when progress does not exist', async () => {
-    const { status } = await api(
+  it('returns null when no progress has been saved yet', async () => {
+    const { status, body } = await api(
       `/api/progress/no-such-book.epub?profileId=${encodeURIComponent(profileId)}`
     )
-    expect(status).toBe(404)
+    expect(status).toBe(200)
+    expect(body).toBeNull()
   })
 
   it('updates existing progress on second save', async () => {
@@ -330,84 +420,61 @@ describe('Progress API', () => {
 })
 
 // ============================================================
-// Settings — covers UpdateSettings rule
+// Admin — backup export and data reset
 // ============================================================
-describe('Settings API', () => {
-  it('returns empty settings initially', async () => {
-    const { status, body } = await api('/api/settings')
-    expect(status).toBe(200)
-    const settings = body as Record<string, unknown>
-    expect(settings.libraryPath).toBeNull()
-    expect(settings.readerTarget).toBeNull()
+describe('GET /api/admin/export', () => {
+  it('returns a JSON backup of profiles and progress', async () => {
+    const res = await fetch(`${baseUrl}/api/admin/export`)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toContain('application/json')
+    expect(res.headers.get('content-disposition')).toContain('attachment')
+
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.version).toBe('1.0')
+    expect(Array.isArray(body.profiles)).toBe(true)
+    expect(Array.isArray(body.progress)).toBe(true)
   })
 
-  it('saves and retrieves settings', async () => {
-    await api('/api/settings', {
+  it('includes saved progress in the backup', async () => {
+    const { body: profile } = await api('/api/profiles', {
       method: 'POST',
+      body: JSON.stringify({ name: 'Backup User' }),
+    })
+    const profileId = (profile as { id: string }).id
+
+    await api('/api/progress/backup-test.epub', {
+      method: 'PUT',
       body: JSON.stringify({
-        libraryPath: '/tmp/books',
-        readerTarget: 'epub',
+        profileId,
+        format: 'epub',
+        location: { cfi: 'epubcfi(/6/2)' },
+        percent: 25,
       }),
     })
 
-    const { body } = await api('/api/settings')
-    const settings = body as Record<string, unknown>
-    expect(settings.libraryPath).toBe('/tmp/books')
-    expect(settings.readerTarget).toBe('epub')
-  })
-
-  it('updates individual settings without affecting others', async () => {
-    await api('/api/settings', {
-      method: 'POST',
-      body: JSON.stringify({ libraryPath: '/tmp/library', readerTarget: 'pdf' }),
-    })
-
-    await api('/api/settings', {
-      method: 'POST',
-      body: JSON.stringify({ readerTarget: 'epub' }),
-    })
-
-    const { body } = await api('/api/settings')
-    const settings = body as Record<string, unknown>
-    expect(settings.libraryPath).toBe('/tmp/library')
-    expect(settings.readerTarget).toBe('epub')
+    const res = await fetch(`${baseUrl}/api/admin/export`)
+    const body = (await res.json()) as { progress: Array<Record<string, unknown>> }
+    expect(body.progress).toHaveLength(1)
+    expect(body.progress[0]!.percent).toBe(25)
   })
 })
 
-// ============================================================
-// Export — black box, verifies it exists
-// ============================================================
-describe('GET /api/settings/export', () => {
-  it('returns a JSON backup', async () => {
-    const res = await fetch(`${baseUrl}/api/settings/export`)
-    expect(res.status).toBe(200)
-    const ct = res.headers.get('content-type') || ''
-    expect(ct).toContain('application/json')
-    expect(res.headers.get('content-disposition')).toContain('attachment')
-  })
-})
-
-// ============================================================
-// Database reset — covers SettingsDashboard.ResetDatabase
-// ============================================================
-describe('DELETE /api/settings', () => {
-  it('resets all data', async () => {
+describe('DELETE /api/admin/data', () => {
+  it('resets profiles, progress and the book index', async () => {
     await api('/api/profiles', {
       method: 'POST',
       body: JSON.stringify({ name: 'To Delete' }),
     })
-    await api('/api/settings', {
-      method: 'POST',
-      body: JSON.stringify({ libraryPath: '/tmp' }),
-    })
+    await api('/api/books')
 
-    const { status } = await api('/api/settings', { method: 'DELETE' })
+    const { status } = await api('/api/admin/data', { method: 'DELETE' })
     expect(status).toBe(200)
 
     const { body: profiles } = await api('/api/profiles')
-    expect((profiles as Array<unknown>)).toHaveLength(0)
+    expect(profiles as Array<unknown>).toHaveLength(0)
 
-    const { body: settings } = await api('/api/settings')
-    expect((settings as Record<string, unknown>).libraryPath).toBeNull()
+    const res = await fetch(`${baseUrl}/api/admin/export`)
+    const backup = (await res.json()) as { progress: Array<unknown> }
+    expect(backup.progress).toHaveLength(0)
   })
 })

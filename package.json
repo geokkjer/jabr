@@ -24,8 +24,7 @@
     "lint": "run-s lint:*",
     "lint:oxlint": "oxlint . --fix",
     "lint:eslint": "eslint . --fix --cache",
-    "format": "oxfmt src/",
-    "migrate": "tsx scripts/migrate-calibre.ts"
+    "format": "oxfmt src/"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

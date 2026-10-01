@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { Effect, pipe } from 'effect'
 import { BookApi } from '@/services/api'
+import type { UploadResult } from '@/services/api'
 import type { Book } from '@/types'
 
 export const useBooksStore = defineStore('books', () => {
@@ -88,22 +89,28 @@ export const useBooksStore = defineStore('books', () => {
     order.value = order.value === 'asc' ? 'desc' : 'asc'
   }
 
-  async function uploadBook(file: File) {
-    const failed = await Effect.runPromise(
+  /**
+   * Import one or more files (or a folder selection). Resolves with the
+   * per-file summary; throws a plain Error on failure so callers can show
+   * `err.message` directly.
+   */
+  async function uploadBook(files: File[]): Promise<UploadResult> {
+    return Effect.runPromise(
       pipe(
-        BookApi.upload(file),
-        // Refetch after a successful upload so the new book appears
-        Effect.flatMap(() => Effect.promise(() => fetchBooks())),
-        Effect.as(false),
+        BookApi.upload(files),
+        Effect.flatMap((result) =>
+          // Refetch after a successful import so the new books appear
+          pipe(
+            Effect.promise(() => fetchBooks()),
+            Effect.as(result),
+          ),
+        ),
         Effect.catchAll((err) => {
           error.value = err.message
-          return Effect.succeed(true)
+          return Effect.fail(new Error(err.message))
         }),
       ),
     )
-
-    // Surface a plain Error so callers can show err.message directly
-    if (failed) throw new Error(error.value ?? 'Upload failed')
   }
 
   return {

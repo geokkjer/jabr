@@ -69,11 +69,6 @@ export function getDb(): Database.Database {
 
     CREATE INDEX IF NOT EXISTS idx_book_progress_book_id ON book_progress(book_id);
 
-    CREATE TABLE IF NOT EXISTS settings (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL
-    );
-
     CREATE TABLE IF NOT EXISTS book_index (
       id TEXT PRIMARY KEY,
       path TEXT NOT NULL UNIQUE,
@@ -95,20 +90,6 @@ export function getDb(): Database.Database {
   db.exec(schemaSQL)
   dbSingleton = db
   return db
-}
-
-// Settings
-export function getSetting(key: string): string | null {
-  const db = getDb()
-  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key) as
-    | { value: string }
-    | undefined
-  return row?.value ?? null
-}
-
-export function setSetting(key: string, value: string): void {
-  const db = getDb()
-  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, value)
 }
 
 // Profiles
@@ -249,7 +230,7 @@ export function cleanupBookIndex(currentPaths: string[]): void {
 
 export function resetDatabase(): void {
   const db = getDb()
-  const tables = ['profiles', 'book_progress', 'settings', 'book_index']
+  const tables = ['profiles', 'book_progress', 'book_index']
   for (const table of tables) {
     db.prepare(`DELETE FROM ${table}`).run()
   }

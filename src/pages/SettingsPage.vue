@@ -1,110 +1,29 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
-import { useSettingsStore } from '@/stores/settings'
+import { ref, onMounted } from 'vue'
+import { useAdminStore } from '@/stores/admin'
 import { useProfilesStore } from '@/stores/profiles'
 import { storeToRefs } from 'pinia'
+import { AdminApi } from '@/services/api'
 import Logo from '@/components/Logo.vue'
 
-const settingsStore = useSettingsStore()
+const adminStore = useAdminStore()
 const profilesStore = useProfilesStore()
 
-const { settings, error: settingsError } = storeToRefs(settingsStore)
+const { error: adminError } = storeToRefs(adminStore)
 const { profiles, activeId, loading: profilesLoading } = storeToRefs(profilesStore)
 
-const libraryPath = ref('')
 const newProfileName = ref('')
-const busy = ref(false)
 const resetBusy = ref(false)
 const message = ref('')
 const showResetConfirm = ref(false)
 
-// Migration wizard
-const calibreLibPath = ref('')
-const preferFormat = ref('')
-const migrating = ref(false)
-const migrationResult = ref<import('@/types').MigrateResult | null>(null)
-const migrationStep = ref<'start' | 'preview' | 'done'>('start')
-const migrationError = ref<string | null>(null)
-
-const isMigrated = computed(() => {
-  if (settings.value.calibreMigrated !== 'true') return false
-  if (!settings.value.calibreLibraryPath) return true
-  if (!calibreLibPath.value.trim()) return true
-  return settings.value.calibreLibraryPath === calibreLibPath.value.trim()
-})
-
 onMounted(async () => {
-  await Promise.all([
-    settingsStore.fetchSettings(),
-    profilesStore.fetchProfiles(),
-  ])
-
-  libraryPath.value = settings.value.libraryPath || ''
-  calibreLibPath.value = settings.value.calibreLibraryPath || ''
+  await profilesStore.fetchProfiles()
 })
-
-async function dryRunMigrate() {
-  if (!calibreLibPath.value.trim()) return
-  migrating.value = true
-  migrationError.value = null
-  migrationResult.value = null
-  try {
-    const result = await settingsStore.migrateFromCalibre(calibreLibPath.value.trim(), {
-      preferFormat: preferFormat.value || undefined,
-      dryRun: true,
-    })
-    migrationResult.value = result
-    migrationStep.value = 'preview'
-  } catch (e: unknown) {
-    migrationError.value = e instanceof Error ? e.message : 'Dry run failed'
-  } finally {
-    migrating.value = false
-  }
-}
-
-async function runMigration() {
-  if (!calibreLibPath.value.trim()) return
-  migrating.value = true
-  migrationError.value = null
-  migrationResult.value = null
-  try {
-    const result = await settingsStore.migrateFromCalibre(calibreLibPath.value.trim(), {
-      preferFormat: preferFormat.value || undefined,
-      dryRun: false,
-    })
-    migrationResult.value = result
-    migrationStep.value = 'done'
-    if (result.copied > 0) {
-      showMessage(`Imported ${result.copied} books from Calibre. Reload to see them in your library.`)
-    } else if (result.errors > 0) {
-      showMessage(`Migration completed with ${result.errors} errors.`)
-    } else {
-      showMessage('Migration complete. No new books to import.')
-    }
-  } catch (e: unknown) {
-    migrationError.value = e instanceof Error ? e.message : 'Migration failed'
-  } finally {
-    migrating.value = false
-  }
-}
 
 function showMessage(msg: string) {
   message.value = msg
   setTimeout(() => (message.value = ''), 3000)
-}
-
-async function saveSettings() {
-  busy.value = true
-  try {
-    await settingsStore.saveSettings({
-      libraryPath: libraryPath.value,
-    })
-    showMessage('Settings saved successfully.')
-  } catch (e: unknown) {
-    console.error('Failed to save settings:', e)
-  } finally {
-    busy.value = false
-  }
 }
 
 async function addProfile() {
@@ -117,7 +36,7 @@ async function addProfile() {
 async function resetApp() {
   resetBusy.value = true
   try {
-    await settingsStore.resetDatabase()
+    await adminStore.resetDatabase()
     showMessage('Database reset successfully. Reloading...')
     setTimeout(() => {
       window.location.href = '/'
@@ -132,7 +51,7 @@ async function resetApp() {
 
 async function exportBackup() {
   try {
-    const res = await fetch('/api/settings/export')
+    const res = await fetch(AdminApi.exportUrl)
     if (!res.ok) throw new Error('Export failed')
     const blob = await res.blob()
     const url = window.URL.createObjectURL(blob)
@@ -165,21 +84,45 @@ async function exportBackup() {
       class="max-w-2xl p-8 bg-card rounded-2xl border-4 border-coffee shadow-brutal-lg"
     >
       <div class="flex flex-col gap-6">
-        <!-- Library Path -->
+        <!-- How books get in -->
         <div>
-          <label for="libraryPath" class="block text-xl font-bold text-coffee mb-2">
-            Books Directory Path
-          </label>
+          <h2 class="text-xl font-bold text-coffee mb-4">Adding Books</h2>
           <p class="text-leather mb-4 italic">
-            Point this to the folder containing your books.
+            Drop book files into your books directory, or upload them from the Library page.
           </p>
-          <input
-            id="libraryPath"
-            v-model="libraryPath"
-            type="text"
-            placeholder="/path/to/your/books"
-            class="w-full px-4 py-3 bg-parchment text-coffee font-bold placeholder-leather/70 border-2 border-coffee rounded-xl focus:outline-none"
-          />
+
+          <ul class="flex flex-col gap-2 text-coffee">
+            <li class="flex gap-2">
+              <span class="text-sage font-bold">1.</span>
+              <span>
+                <strong>Folder:</strong> put <code class="font-mono text-sm">.epub</code>,
+                <code class="font-mono text-sm">.pdf</code>, <code class="font-mono text-sm">.txt</code> or
+                <code class="font-mono text-sm">.md</code> files in the directory the server scans
+                (<code class="font-mono text-sm">JABR_BOOKS_PATH</code>, <code class="font-mono text-sm">/app/books</code>
+                in the container). Subfolders are scanned too.
+              </span>
+            </li>
+            <li class="flex gap-2">
+              <span class="text-sage font-bold">2.</span>
+              <span>
+                <strong>Upload:</strong> use <em>Upload</em> on the Library page — single files or a whole folder.
+              </span>
+            </li>
+            <li class="flex gap-2">
+              <span class="text-sage font-bold">3.</span>
+              <span>
+                <strong>Naming:</strong> title and author are read from the filename as
+                <code class="font-mono text-sm">Author - Title.ext</code>. Anything else shows up under
+                <em>Unknown</em>, readable but unsorted.
+              </span>
+            </li>
+          </ul>
+
+          <p class="text-leather mt-4 italic text-sm">
+            Coming from Calibre? Use <em>Save to disk</em> with the template
+            <code class="font-mono">&#123;authors&#125; - &#123;title&#125;</code> and point it at your books
+            directory — that produces exactly the naming convention above.
+          </p>
         </div>
 
         <!-- Profiles -->
@@ -226,155 +169,12 @@ async function exportBackup() {
           </form>
         </div>
 
-        <!-- Migrate from Calibre -->
-        <div class="border-t-2 border-coffee/10 pt-6">
-          <h2 class="text-xl font-bold text-coffee mb-4">Migrate from Calibre</h2>
-
-          <p class="text-leather mb-4 italic">
-            Import books from an existing Calibre library. Files are copied into your books directory.
-          </p>
-
-          <div class="flex flex-col gap-4">
-            <div>
-              <label for="calibreLibPath" class="block text-sm font-bold text-coffee mb-2">
-                Calibre Library Path
-              </label>
-              <input
-                id="calibreLibPath"
-                v-model="calibreLibPath"
-                type="text"
-                placeholder="/path/to/calibre/library"
-                class="w-full px-4 py-3 bg-parchment text-coffee font-bold placeholder-leather/70 border-2 border-coffee rounded-xl focus:outline-none"
-                :disabled="migrating"
-              />
-            </div>
-
-            <div>
-              <label for="preferFormat" class="block text-sm font-bold text-coffee mb-2">
-                Preferred Format <span class="text-leather font-normal">(optional)</span>
-              </label>
-              <select
-                id="preferFormat"
-                v-model="preferFormat"
-                class="w-full px-4 py-3 bg-parchment text-coffee font-bold border-2 border-coffee rounded-xl focus:outline-none"
-                :disabled="migrating"
-              >
-                <option value="">All formats</option>
-                <option value="epub">EPUB only</option>
-                <option value="pdf">PDF only</option>
-                <option value="txt">Text only</option>
-              </select>
-            </div>
-
-            <div v-if="migrationError" class="p-3 rounded-xl bg-clay/10 border border-clay/30 text-clay font-bold">
-              {{ migrationError }}
-            </div>
-
-            <!-- Step 1: Start -->
-            <div v-if="migrationStep === 'start'" class="flex flex-wrap gap-3">
-              <button
-                class="px-6 py-3 bg-card text-coffee font-bold border-2 border-coffee rounded-xl hover:shadow-brutal disabled:opacity-60 transition-all"
-                :disabled="!calibreLibPath.trim() || migrating"
-                @click="dryRunMigrate"
-              >
-                {{ migrating ? 'Scanning...' : 'Preview Import' }}
-              </button>
-              <button
-                class="px-6 py-3 bg-forest text-parchment font-bold border-2 border-coffee rounded-xl hover:shadow-brutal disabled:opacity-60 transition-all"
-                :disabled="!calibreLibPath.trim() || migrating || isMigrated"
-                :title="isMigrated ? 'Migration already completed for this library' : ''"
-                @click="runMigration"
-              >
-                {{ migrating ? 'Importing...' : 'Run Import' }}
-              </button>
-              <p v-if="isMigrated" class="text-sage font-bold text-sm self-center">
-                  ✓ Already imported from this library
-                </p>
-            </div>
-
-            <!-- Step 2: Preview -->
-            <div v-if="migrationStep === 'preview' && migrationResult" class="flex flex-col gap-3">
-              <div class="p-4 rounded-xl bg-parchment border-2 border-coffee/10">
-                <p class="font-bold text-coffee mb-2">
-                  Preview: {{ migrationResult.total }} books found
-                </p>
-                <p class="text-sm text-leather">
-                  {{ migrationResult.details.filter(d => d.action === 'dry-run').length }} would be copied,
-                  {{ migrationResult.skipped }} would be skipped
-                </p>
-              </div>
-
-              <div v-if="migrationResult.details.length > 0" class="max-h-48 overflow-y-auto border-2 border-coffee/10 rounded-xl p-2">
-                <div
-                  v-for="(d, i) in migrationResult.details"
-                  :key="i"
-                  class="text-sm py-1 px-2 border-b border-coffee/5 last:border-0"
-                  :class="d.action === 'skip' ? 'text-sage' : 'text-coffee'"
-                >
-                  <span v-if="d.action === 'dry-run'">📄</span>
-                  <span v-else-if="d.action === 'skip'">⏭</span>
-                  {{ d.title }}
-                  <span class="text-leather">by {{ d.author }}</span>
-                  <span class="text-sage text-xs">({{ d.format }})</span>
-                  <span v-if="d.reason" class="text-clay text-xs"> — {{ d.reason }}</span>
-                </div>
-              </div>
-
-              <div class="flex gap-3">
-                <button
-                  class="px-6 py-3 bg-forest text-parchment font-bold border-2 border-coffee rounded-xl hover:shadow-brutal disabled:opacity-60 transition-all"
-                  :disabled="migrating || isMigrated"
-                  @click="runMigration"
-                >
-                  {{ migrating ? 'Importing...' : 'Confirm & Run Import' }}
-                </button>
-                <button
-                  class="px-4 py-3 bg-card text-coffee font-bold border-2 border-coffee rounded-xl hover:shadow-brutal transition-all"
-                  @click="migrationStep = 'start'; migrationResult = null"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-
-            <!-- Step 3: Done -->
-            <div v-if="migrationStep === 'done' && migrationResult" class="flex flex-col gap-3">
-              <div
-                class="p-4 rounded-xl border-2"
-                :class="migrationResult.errors > 0 ? 'bg-clay/10 border-clay/30' : 'bg-forest/10 border-forest/30'"
-              >
-                <p class="font-bold text-coffee mb-1">
-                  Migration Complete!
-                </p>
-                <p class="text-sm text-leather">
-                  Copied: {{ migrationResult.copied }} |
-                  Skipped: {{ migrationResult.skipped }} |
-                  Errors: {{ migrationResult.errors }}
-                </p>
-              </div>
-
-              <div v-if="migrationResult.errors_list.length > 0" class="max-h-32 overflow-y-auto">
-                <p class="text-sm font-bold text-clay mb-1">Errors:</p>
-                <p v-for="(err, i) in migrationResult.errors_list" :key="i" class="text-xs text-clay">
-                  {{ err }}
-                </p>
-              </div>
-
-              <button
-                class="self-start px-4 py-2 bg-card text-coffee font-bold border-2 border-coffee rounded-xl hover:shadow-brutal transition-all"
-                @click="migrationStep = 'start'; migrationResult = null"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-
         <!-- Backup -->
         <div class="border-t-2 border-coffee/10 pt-6">
           <h2 class="text-xl font-bold text-coffee mb-4">Backup & Export</h2>
           <p class="text-leather mb-4 italic">
-            Export all settings, profiles, and reading progress as a backup file.
+            Export your profiles and reading progress as a JSON file. Book files are not included —
+            they are just files on disk, copy them however you like.
           </p>
           <button
             class="px-6 py-3 bg-forest text-parchment font-bold border-2 border-coffee rounded-xl hover:shadow-brutal transition-all"
@@ -384,52 +184,43 @@ async function exportBackup() {
           </button>
         </div>
 
-        <!-- Save + Danger Zone -->
-        <div class="flex flex-col gap-4">
-          <div class="flex items-center gap-4">
-            <button
-              class="px-6 py-3 bg-forest text-parchment font-bold border-2 border-coffee rounded-xl hover:shadow-brutal disabled:opacity-60 transition-all"
-              :disabled="busy"
-              @click="saveSettings"
-            >
-              {{ busy ? 'Saving...' : 'Save Settings' }}
-            </button>
-
+        <!-- Danger Zone -->
+        <div class="border-t-2 border-coffee/10 pt-6">
+          <div class="flex items-center gap-4 mb-4">
             <p v-if="message" class="text-forest font-bold">{{ message }}</p>
-            <p v-if="settingsError" class="text-red-600 font-bold">{{ settingsError }}</p>
+            <p v-if="adminError" class="text-red-600 font-bold">{{ adminError }}</p>
           </div>
 
-          <div class="border-t-2 border-coffee/10 pt-6">
-            <h3 class="text-xl font-bold text-clay mb-2">Danger Zone</h3>
-            <p class="text-leather mb-4 italic">
-              Reset the database (clears all settings, profiles, and reading progress).
-            </p>
+          <h3 class="text-xl font-bold text-clay mb-2">Danger Zone</h3>
+          <p class="text-leather mb-4 italic">
+            Reset the database (clears all profiles and reading progress, and rebuilds the book index).
+            Your book files are untouched.
+          </p>
 
-            <div v-if="showResetConfirm" class="flex items-center gap-4">
-              <p class="text-coffee font-bold">Are you sure? This cannot be undone.</p>
-              <button
-                class="px-4 py-2 bg-clay text-parchment font-bold border-2 border-coffee rounded-xl hover:shadow-brutal disabled:opacity-60 transition-all"
-                :disabled="resetBusy"
-                @click="resetApp"
-              >
-                {{ resetBusy ? 'Resetting...' : 'Yes, Reset' }}
-              </button>
-              <button
-                class="px-4 py-2 bg-card text-coffee font-bold border-2 border-coffee rounded-xl hover:shadow-brutal disabled:opacity-60 transition-all"
-                :disabled="resetBusy"
-                @click="showResetConfirm = false"
-              >
-                Cancel
-              </button>
-            </div>
+          <div v-if="showResetConfirm" class="flex items-center gap-4">
+            <p class="text-coffee font-bold">Are you sure? This cannot be undone.</p>
             <button
-              v-else
-              class="px-4 py-2 bg-clay text-parchment font-bold border-2 border-coffee rounded-xl hover:shadow-brutal transition-all"
-              @click="showResetConfirm = true"
+              class="px-4 py-2 bg-clay text-parchment font-bold border-2 border-coffee rounded-xl hover:shadow-brutal disabled:opacity-60 transition-all"
+              :disabled="resetBusy"
+              @click="resetApp"
             >
-              Reset Database
+              {{ resetBusy ? 'Resetting...' : 'Yes, Reset' }}
+            </button>
+            <button
+              class="px-4 py-2 bg-card text-coffee font-bold border-2 border-coffee rounded-xl hover:shadow-brutal disabled:opacity-60 transition-all"
+              :disabled="resetBusy"
+              @click="showResetConfirm = false"
+            >
+              Cancel
             </button>
           </div>
+          <button
+            v-else
+            class="px-4 py-2 bg-clay text-parchment font-bold border-2 border-coffee rounded-xl hover:shadow-brutal transition-all"
+            @click="showResetConfirm = true"
+          >
+            Reset Database
+          </button>
         </div>
       </div>
     </div>

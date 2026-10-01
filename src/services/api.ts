@@ -3,7 +3,14 @@
  * Each service is a plain object whose methods return Effect values.
  */
 import { Effect, Schema, pipe } from "effect"
-import { fetchJsonSafe, mutateJson, fetchEffect, parseJson, retryOnNetworkError } from "./http-client"
+import {
+  fetchJsonSafe,
+  mutateJson,
+  fetchEffect,
+  parseJson,
+  retryOnNetworkError,
+  HttpError,
+} from "./http-client"
 
 const BASE = "/api"
 
@@ -36,32 +43,57 @@ const ProfileSchema = Schema.Struct({
   createdAt: Schema.Number,
 })
 
-const SettingsSchema = Schema.Struct({
-  libraryPath: Schema.NullOr(Schema.String),
-  readerTarget: Schema.NullOr(Schema.String),
-  calibreMigrated: Schema.NullOr(Schema.String),
-  calibreLibraryPath: Schema.NullOr(Schema.String),
-})
+const OkSchema = Schema.Struct({ ok: Schema.Boolean })
 
-const MigrateResultSchema = Schema.Struct({
-  dryRun: Schema.Boolean,
-  total: Schema.Number,
-  copied: Schema.Number,
+const UploadSchema = Schema.Struct({
+  ok: Schema.Boolean,
+  imported: Schema.Number,
   skipped: Schema.Number,
-  errors: Schema.Number,
-  details: Schema.Array(
+  failed: Schema.Number,
+  files: Schema.Array(
     Schema.Struct({
-      action: Schema.Literal("copy", "skip", "error", "dry-run"),
-      title: Schema.String,
-      author: Schema.String,
-      format: Schema.String,
-      reason: Schema.optional(Schema.String),
+      path: Schema.String,
+      status: Schema.Union(Schema.Literal("imported", "skipped", "failed")),
+      reason: Schema.NullOr(Schema.String),
     }),
   ),
-  errors_list: Schema.Array(Schema.String),
 })
 
-const OkSchema = Schema.Struct({ ok: Schema.Boolean })
+type DecodedUpload = Schema.Schema.Type<typeof UploadSchema>
+
+/** Per-file outcome of a multi-file / folder import. */
+export type UploadStatus = "imported" | "skipped" | "failed"
+
+export interface UploadFileResult {
+  path: string
+  status: UploadStatus
+  reason: string | null
+}
+
+export interface UploadResult {
+  ok: boolean
+  imported: number
+  skipped: number
+  failed: number
+  files: UploadFileResult[]
+}
+
+/** Decode the wire shape once so every entry is cloned into a plain object. */
+function toUploadResult(decoded: DecodedUpload): UploadResult {
+  return {
+    ok: decoded.ok,
+    imported: decoded.imported,
+    skipped: decoded.skipped,
+    failed: decoded.failed,
+    files: decoded.files.map(
+      (entry): UploadFileResult => ({
+        path: entry.path,
+        status: entry.status,
+        reason: entry.reason,
+      }),
+    ),
+  }
+}
 
 // ── Book API ───────────────────────────────────────────────────
 
@@ -92,20 +124,27 @@ export const BookApi = {
 
   getContentUrl: (id: string) => `${BASE}/book/${encodeURIComponent(id)}`,
 
-  upload: (file: File) =>
+  /**
+   * Import one or more files (or a whole folder selection) in a single
+   * request. The multipart filename carries the relative path so a folder
+   * upload keeps its structure server-side.
+   */
+  upload: (files: File[]) =>
     pipe(
       Effect.sync(() => {
         const form = new FormData()
-        form.append("file", file)
+        for (const file of files) {
+          const relativePath = file.webkitRelativePath || file.name
+          form.append("files", file, relativePath)
+        }
         return form
       }),
       Effect.flatMap((form) =>
         pipe(
           fetchEffect(`${BASE}/books/upload`, { method: "POST", body: form }),
           Effect.flatMap(parseJson),
-          Effect.flatMap(
-            Schema.decodeUnknown(Schema.Struct({ ok: Schema.Boolean, id: Schema.String })),
-          ),
+          Effect.flatMap(Schema.decodeUnknown(UploadSchema)),
+          Effect.map(toUploadResult),
         ),
       ),
       retryOnNetworkError,
@@ -141,13 +180,8 @@ export const ProgressApi = {
       fetchJsonSafe(
         `${BASE}/progress/${encodeURIComponent(bookId)}?profileId=${encodeURIComponent(profileId)}`,
       ),
-      Effect.flatMap(Schema.decodeUnknown(BookProgressSchema)),
-      Effect.catchAll((err) => {
-        if (err._tag === "HttpError" && err.status === 404) {
-          return Effect.succeed(null)
-        }
-        return Effect.fail(err)
-      }),
+      // The server answers `null` when nothing has been saved yet
+      Effect.flatMap(Schema.decodeUnknown(Schema.NullOr(BookProgressSchema))),
     ),
 
   save: (
@@ -166,40 +200,19 @@ export const ProgressApi = {
     ),
 }
 
-// ── Settings API ───────────────────────────────────────────────
+// ── Admin API ──────────────────────────────────────────────────
 
-export const SettingsApi = {
-  get: pipe(
-    fetchJsonSafe(`${BASE}/settings`),
-    Effect.flatMap(Schema.decodeUnknown(SettingsSchema)),
-  ),
-
-  save: (partial: Record<string, unknown>) =>
-    pipe(
-      mutateJson(`${BASE}/settings`, "POST", partial),
-      Effect.flatMap(Schema.decodeUnknown(OkSchema)),
-      Effect.as(undefined as void),
-    ),
-
+export const AdminApi = {
+  /** Irreversible: wipes profiles, progress and the book index. */
   reset: () =>
     pipe(
-      Effect.tryPromise(() =>
-        fetch(`${BASE}/settings`, { method: "DELETE" }),
-      ),
+      Effect.tryPromise(() => fetch(`${BASE}/admin/data`, { method: "DELETE" })),
       Effect.filterOrFail(
         (res) => res.ok,
-        (res) => new Error(`${res.status}: ${res.statusText}`),
+        (res) => new HttpError(res.status, `${res.status}: ${res.statusText}`),
       ),
       Effect.as(undefined as void),
     ),
-}
 
-// ── Migration API ─────────────────────────────────────────────
-
-export const MigrationApi = {
-  run: (options: { libraryPath: string; dryRun?: boolean; preferFormat?: string }) =>
-    pipe(
-      mutateJson(`${BASE}/settings/migrate`, "POST", options),
-      Effect.flatMap(Schema.decodeUnknown(MigrateResultSchema)),
-    ),
+  exportUrl: `${BASE}/admin/export`,
 }

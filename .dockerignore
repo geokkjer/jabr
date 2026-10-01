@@ -5,7 +5,6 @@ dist
 *.md
 .env
 .pnpm-store
-scripts
 .vscode
 
 # Runtime data must never enter the build context

@@ -27,9 +27,21 @@ vi.mock('@/services/api', () => ({
 }))
 
 import { BookApi } from '@/services/api'
+import type { UploadResult } from '@/services/api'
 import { useBooksStore } from '@/stores/books'
 
 const uploadMock = vi.mocked(BookApi.upload)
+
+const uploadResult: UploadResult = {
+  ok: true,
+  imported: 1,
+  skipped: 1,
+  failed: 0,
+  files: [
+    { path: 'Imported/New.epub', status: 'imported', reason: null },
+    { path: 'Imported/Bad.exe', status: 'skipped', reason: 'Unsupported file type' },
+  ],
+}
 
 function book(overrides: Partial<Book> = {}): Book {
   return {
@@ -55,7 +67,7 @@ describe('useBooksStore', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     holders.listEffect = Effect.succeed(library)
-    uploadMock.mockReturnValue(Effect.succeed({ ok: true, id: 'Imported/New.epub' }))
+    uploadMock.mockReturnValue(Effect.succeed(uploadResult))
   })
 
   describe('fetchBooks', () => {
@@ -167,23 +179,29 @@ describe('useBooksStore', () => {
   })
 
   describe('uploadBook', () => {
-    it('refetches the library after a successful upload', async () => {
+    it('refetches the library after a successful import', async () => {
       const store = useBooksStore()
-      const file = new File(['x'], 'New.epub', { type: 'application/epub+zip' })
+      const files = [
+        new File(['x'], 'New.epub', { type: 'application/epub+zip' }),
+        new File(['y'], 'Notes.txt', { type: 'text/plain' }),
+      ]
 
-      await store.uploadBook(file)
+      const result = await store.uploadBook(files)
 
-      expect(uploadMock).toHaveBeenCalledWith(file)
-      // The library is fetched again so the uploaded book shows up
+      expect(uploadMock).toHaveBeenCalledWith(files)
+      // The library is fetched again so the imported books show up
       expect(store.books).toHaveLength(3)
       expect(store.error).toBeNull()
+      expect(result).toEqual(uploadResult)
     })
 
     it('records the error and throws a plain Error on failure', async () => {
       uploadMock.mockReturnValue(Effect.fail(new HttpError(413, 'File too large')))
       const store = useBooksStore()
 
-      await expect(store.uploadBook(new File(['x'], 'Big.epub'))).rejects.toThrow('File too large')
+      await expect(
+        store.uploadBook([new File(['x'], 'Big.epub')]),
+      ).rejects.toThrow('File too large')
       expect(store.error).toBe('File too large')
     })
   })

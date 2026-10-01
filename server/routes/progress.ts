@@ -28,11 +28,9 @@ progressRouter.get('/:bookId', (req: Request, res: Response) => {
       return
     }
     const progress = getBookProgress(profileId, bookId)
-    if (!progress) {
-      res.status(404).json({ error: 'Progress not found' })
-      return
-    }
-    res.json(progress)
+    // "No progress saved yet" is a normal state, not an error: answering 404
+    // here only litters the browser console on every first read of a book.
+    res.json(progress ?? null)
   } catch (e) {
     console.error('Failed to get progress:', e)
     res.status(500).json({ error: 'Failed to get progress' })

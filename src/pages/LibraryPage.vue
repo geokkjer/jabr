@@ -20,7 +20,8 @@ const { filteredBooks, loading, error, search, sort, order } = storeToRefs(books
 const { recentlyRead } = storeToRefs(progressStore)
 
 const uploadBusy = ref(false)
-const uploadError = ref<string | null>(null)
+const uploadSummary = ref<string | null>(null)
+const uploadFailures = ref<Array<{ path: string; reason: string }>>([])
 
 onMounted(async () => {
   await Promise.all([
@@ -44,17 +45,27 @@ function openBook(book: Book) {
   router.push(`/read/${encodeURIComponent(book.id)}`)
 }
 
-async function uploadBook(ev: Event) {
+async function importFiles(ev: Event) {
   const input = ev.currentTarget as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
+  const files = Array.from(input.files ?? [])
+  if (files.length === 0) return
 
   uploadBusy.value = true
-  uploadError.value = null
+  uploadSummary.value = null
+  uploadFailures.value = []
+
   try {
-    await booksStore.uploadBook(file)
+    const result = await booksStore.uploadBook(files)
+    uploadSummary.value = `Imported ${result.imported}, skipped ${result.skipped}, failed ${result.failed}`
+    uploadFailures.value = result.files
+      .filter((f) => f.status !== 'imported')
+      .map((f) => ({ path: f.path, reason: f.reason ?? f.status }))
   } catch (e: unknown) {
-    uploadError.value = e instanceof Error ? e.message : 'Upload failed'
+    uploadSummary.value = e instanceof Error ? e.message : 'Import failed'
+    uploadFailures.value = files.map((f) => ({
+      path: f.webkitRelativePath || f.name,
+      reason: 'not imported',
+    }))
   } finally {
     uploadBusy.value = false
     input.value = ''
@@ -94,11 +105,28 @@ async function uploadBook(ev: Event) {
             <input
               type="file"
               class="hidden"
+              multiple
               accept=".pdf,.epub,.txt,.md"
               :disabled="uploadBusy"
-              @change="uploadBook"
+              @change="importFiles"
             />
-            {{ uploadBusy ? 'Uploading...' : 'Upload book' }}
+            {{ uploadBusy ? 'Importing...' : 'Upload files' }}
+          </label>
+          <label
+            class="px-4 py-2 bg-ocher text-coffee font-bold border-2 border-coffee rounded-xl hover:shadow-brutal disabled:opacity-60 cursor-pointer transition-all"
+            :class="{ 'opacity-60 cursor-not-allowed': uploadBusy }"
+            :aria-disabled="uploadBusy"
+          >
+            <input
+              type="file"
+              class="hidden"
+              webkitdirectory
+              multiple
+              accept=".pdf,.epub,.txt,.md"
+              :disabled="uploadBusy"
+              @change="importFiles"
+            />
+            {{ uploadBusy ? 'Importing...' : 'Import folder' }}
           </label>
         </div>
       </div>
@@ -146,9 +174,14 @@ async function uploadBook(ev: Event) {
       />
     </div>
 
-    <!-- Upload Error -->
-    <div v-if="uploadError" class="mt-4">
-      <p class="text-sm text-red-600 font-bold">{{ uploadError }}</p>
+    <!-- Import summary -->
+    <div v-if="uploadSummary" class="mt-4">
+      <p class="text-sm font-bold text-coffee">{{ uploadSummary }}</p>
+      <ul v-if="uploadFailures.length" class="mt-2 text-sm text-red-600">
+        <li v-for="failure in uploadFailures" :key="failure.path">
+          {{ failure.path }} — {{ failure.reason }}
+        </li>
+      </ul>
     </div>
   </div>
 </template>

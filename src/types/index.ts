@@ -23,35 +23,6 @@ export interface Profile {
   createdAt: number
 }
 
-export interface LibrarySettings {
-  libraryPath: string | null
-  readerTarget: string | null
-}
-
-export interface MigrationSettings {
-  calibreMigrated: string | null
-  calibreLibraryPath: string | null
-}
-
-export interface Settings extends LibrarySettings, MigrationSettings {}
-
-export interface MigrateResult {
-  dryRun: boolean
-  total: number
-  copied: number
-  skipped: number
-  errors: number
-  details: Array<{
-    action: 'copy' | 'skip' | 'error' | 'dry-run'
-    title: string
-    author: string
-    format: string
-    reason?: string
-  }>
-  errors_list: string[]
-}
-
-
 // Book location discriminated union
 export type BookLocation =
   | { format: 'epub'; cfi: string }

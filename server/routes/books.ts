@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import multer from 'multer'
-import { join, extname, basename, resolve, relative, sep } from 'node:path'
+import { join, extname, resolve, relative, sep } from 'node:path'
 import { createWriteStream, existsSync, statSync, createReadStream } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
 import { Readable } from 'node:stream'
@@ -12,7 +12,7 @@ import {
   UPLOAD_MAX_BYTES,
   ALLOWED_EXTENSIONS_SET,
   CONTENT_TYPES,
-  SAFE_FILENAME_PATTERN,
+  MAX_FILENAME_LENGTH,
 } from '../config.js'
 import { searchBookIndex, getBookIndex } from '../db.js'
 import { scanAndIndex, ensureBooksDir, invalidateScanCache } from '../scanner.js'
@@ -130,51 +130,213 @@ bookFileRouter.get('/*splat', (req: Request, res: Response) => {
   }
 })
 
-// Upload
+// ── Upload ─────────────────────────────────────────────────────
+// POST /api/books/upload — multipart field `files`, one or more files.
+// Browsers send a directory selection's relative path as the multipart
+// filename, so a single preview may be several path segments deep.
+
+export type UploadStatus = 'imported' | 'skipped' | 'failed'
+
+export interface UploadFileResult {
+  path: string
+  status: UploadStatus
+  reason: string | null
+}
+
+export interface UploadResponse {
+  ok: boolean
+  imported: number
+  skipped: number
+  failed: number
+  files: UploadFileResult[]
+}
+
+const SAFE_SEGMENT_PATTERN = /[^a-zA-Z0-9._ -]+/g
+const FALLBACK_BASENAME = 'untitled'
+
+/** Sanitize a directory segment: same rules as a filename, without an extension. */
+function sanitizeDirSegment(segment: string): string {
+  const cleaned = segment
+    .normalize('NFKC')
+    .replace(SAFE_SEGMENT_PATTERN, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[.\s]+/, '')
+    .replace(/\.{2,}/g, '.')
+    .slice(0, MAX_FILENAME_LENGTH)
+    .replace(/[.\s]+$/, '')
+
+  return cleaned || FALLBACK_BASENAME
+}
+
+/**
+ * Sanitize one path segment while preserving spaces, dots, dashes and
+ * underscores. Traversal markers, absolute-path markers, drive letters and
+ * NUL bytes cannot survive this: backslashes become separators upstream and
+ * `..`-only segments are dropped upstream, while anything outside the safe
+ * set is replaced. Returns a `basename` with a non-empty stem of at most
+ * MAX_FILENAME_LENGTH total characters (extension included).
+ */
+function sanitizeSegment(segment: string, ext: string): string {
+  const stem = segment
+    .normalize('NFKC')
+    .replace(SAFE_SEGMENT_PATTERN, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/^[.\s]+/, '')
+    .replace(/[.\s]+$/, '')
+    .slice(0, -ext.length)
+
+  const bounded = stem
+    .replace(/\.{2,}/g, '.')
+    .slice(0, Math.max(1, MAX_FILENAME_LENGTH - ext.length))
+    .replace(/[.\s]+$/, '')
+    .replace(/^[.\s]+/, '')
+
+  return (bounded || FALLBACK_BASENAME) + ext
+}
+
+function stripNulBytes(value: string): string {
+  let out = ''
+  for (let i = 0; i < value.length; i += 1) {
+    if (value.charCodeAt(i) !== 0) out += value[i]
+  }
+  return out
+}
+
+/**
+ * Turn `My Books/Author - Title.epub` into safe relative segments below the
+ * destination root. Rejects the whole path when the extension is not
+ * allowed; drops `.`/`..`/empty segments and strips absolute-path markers so
+ * a traversal attempt is flattened into the destination directory rather
+ * than escaping it. Returns null when nothing usable is left.
+ */
+function sanitizeRelativePath(originalName: string): string[] | null {
+  const withoutNul = stripNulBytes(originalName)
+  const ext = extname(withoutNul).toLowerCase()
+  if (!ALLOWED_EXTENSIONS_SET.has(ext)) return null
+
+  const segments = withoutNul
+    .replace(/\\/g, '/')
+    .split('/')
+    .map((segment) => segment.trim())
+    .filter((segment) => segment !== '' && segment !== '.' && segment !== '..')
+
+  if (segments.length === 0) return null
+
+  const safe: string[] = []
+  for (const segment of segments) {
+    // Windows drive letters ('C:') and absolute-path markers are noise.
+    const scrubbed = segment.replace(/^[A-Za-z]:/, '')
+    if (scrubbed === '') continue
+    safe.push(sanitizeDirSegment(scrubbed))
+  }
+
+  if (safe.length === 0) return null
+
+  const last = safe[safe.length - 1]
+  if (last === undefined) return null
+
+  safe[safe.length - 1] = sanitizeSegment(last, ext)
+
+  return safe
+}
+
 const upload = multer({
   limits: { fileSize: UPLOAD_MAX_BYTES },
-  fileFilter: (_req, file, cb) => {
-    const ext = extname(file.originalname).toLowerCase()
-    if (ALLOWED_EXTENSIONS_SET.has(ext)) {
-      cb(null, true)
-    } else {
-      cb(new Error('Unsupported file type'))
-    }
-  },
+  // Multer strips the directory from `originalname` by default. Browsers send
+  // a folder selection's relative path there, so it must survive to keep the
+  // structure; every segment is sanitized below before touching the disk.
+  preservePath: true,
 })
 
-booksRouter.post('/upload', upload.single('file'), async (req: Request, res: Response) => {
+booksRouter.post('/upload', upload.array('files'), async (req: Request, res: Response) => {
   try {
-    if (!req.file) {
-      res.status(400).json({ error: 'Missing file' })
+    const uploaded = (req.files as Express.Multer.File[] | undefined) ?? []
+
+    if (uploaded.length === 0) {
+      res.status(400).json({ error: 'Missing files' })
       return
     }
 
     const booksDir = await ensureBooksDir()
     const importedDir = join(booksDir, 'Imported')
-    await mkdir(importedDir, { recursive: true })
 
-    const originalName = req.file.originalname
-    const ext = extname(originalName).toLowerCase()
-    const safeName = basename(originalName)
-      .normalize('NFKC')
-      .replace(SAFE_FILENAME_PATTERN, '_')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, -ext.length)
+    const results: UploadFileResult[] = []
 
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
-    const finalName = safeName + ` (${timestamp})` + ext
-    const destPath = join(importedDir, finalName)
+    for (const file of uploaded) {
+      const segments = sanitizeRelativePath(file.originalname)
+      if (!segments) {
+        results.push({
+          path: file.originalname,
+          status: 'failed',
+          reason: 'Unsupported file type',
+        })
+        continue
+      }
 
-    await pipeline(Readable.from(req.file.buffer), createWriteStream(destPath))
+      const ext = extname(file.originalname).toLowerCase()
+      const relativePath = segments.join('/')
+      const targetDir = join(importedDir, ...segments.slice(0, -1))
+      const leaf = segments[segments.length - 1]
+      if (leaf === undefined) {
+        results.push({
+          path: file.originalname,
+          status: 'failed',
+          reason: 'Unsupported file type',
+        })
+        continue
+      }
+      const baseName = leaf.slice(0, -ext.length)
+      const destPath = uniqueDestPath(targetDir, baseName, ext)
 
-    // The new file must show up in the next /api/books response immediately
-    invalidateScanCache()
+      try {
+        await mkdir(targetDir, { recursive: true })
+        await pipeline(Readable.from(file.buffer), createWriteStream(destPath))
 
-    res.json({ ok: true, id: join('Imported', finalName) })
+        // A successfully written file must show up in the next /api/books.
+        invalidateScanCache()
+
+        results.push({
+          path: join('Imported', relative(importedDir, destPath)).split(sep).join('/'),
+          status: 'imported',
+          reason: null,
+        })
+      } catch (e) {
+        console.error('Failed to write uploaded file:', e)
+        results.push({
+          path: join('Imported', relativePath).split(sep).join('/'),
+          status: 'failed',
+          reason: 'Could not write file',
+        })
+      }
+    }
+
+    const summary: UploadResponse = {
+      ok: true,
+      imported: results.filter((r) => r.status === 'imported').length,
+      skipped: results.filter((r) => r.status === 'skipped').length,
+      failed: results.filter((r) => r.status === 'failed').length,
+      files: results,
+    }
+
+    res.json(summary)
   } catch (e) {
     console.error('Failed to upload book:', e)
     res.status(500).json({ error: 'Failed to upload book' })
   }
 })
+
+/**
+ * Collisions never reuse a timestamp: append ` (2)`, ` (3)`, … before the
+ * extension so the parsed title stays clean and nothing is overwritten.
+ */
+function uniqueDestPath(dir: string, baseName: string, ext: string): string {
+  let candidate = join(dir, baseName + ext)
+  let counter = 2
+  while (existsSync(candidate)) {
+    candidate = join(dir, `${baseName} (${counter})${ext}`)
+    counter += 1
+  }
+  return candidate
+}

@@ -16,12 +16,12 @@
 - [x] 2.3 Book filesystem scanner with caching (because rescanning 500 books on every request is for masochists)
 - [x] 2.4 Multer upload endpoint (512MB max, filetype whitelist, sanitized filenames)
 - [x] 2.5 ~~Auth system~~ — **removed on purpose.** See "Why no auth?" below.
-- [x] 2.6 Calibre migration (CLI + API, reads metadata.db directly, no Calibre runtime needed)
+- [x] 2.6 ~~Calibre migration~~ — **removed.** Replaced by folder/file import; see "Why no Calibre importer?" below.
 
 ### Deviations from (unwritten) plan
 - We kept SQLite instead of migrating to PostgreSQL. See the README's "Why not PostgreSQL?" section for the full rant.
 - We kept Express instead of PostgREST. Writing CRUD routes manually takes about 40 minutes and removes an entire container from the stack. Worth it.
-- The `pnpm migrate` CLI script reads Calibre's `metadata.db` directly and copies files to `books/`. This is simpler and doesn't require PostgreSQL to be running.
+- The `pnpm migrate` CLI script was later deleted along with the whole Calibre path — Calibre's own *Save to disk* with a `{authors} - {title}` template produces the layout JABR already reads.
 
 ## Phase 3: Frontend - API Layer
 - [x] 3.1 API client composable (`useApi` — thin fetch wrapper, no GraphQL, no tRPC, no OpenAPI codegen)
@@ -30,7 +30,7 @@
 - [x] 3.4 Profiles API composable (list, create)
 - [x] 3.5 Settings API composable (get, save, reset)
 - [x] 3.6 ~~Auth API composable~~ — removed with the rest of the login system.
-- [x] 3.7 Export/Migration API composable (backup download, Calibre import)
+- [x] 3.7 Export API composable (backup download); the migration side became moot when Calibre import was removed
 
 ### Deviations from plan
 - Didn't need PostgREST client at all. The Express API exposes conventional REST endpoints. This is fine.
@@ -64,7 +64,7 @@
 - [x] 6.2 `App.vue` — Root wrapper with `<RouterView>`
 - [x] 6.3 `LibraryPage.vue` (/) — Book grid with search, sort, progress indicators
 - [x] 6.4 `ReaderPage.vue` (`/read/:id`) — Full-screen reader with dark theme
-- [x] 6.5 `SettingsPage.vue` (`/settings`) — Profile management, Calibre migration UI
+- [x] 6.5 `SettingsPage.vue` (`/settings`) — Profile management, adding-books guidance, backup export, reset
 
 ### Deviations from plan
 - LibraryPage fetches profiles and books in parallel with `Promise.all`. Sequential fetching was for dial-up.
@@ -73,7 +73,7 @@
 - All pages have error states, loading states, and empty states. Yes, even the settings page.
 
 ## Phase 7: Build & Deploy
-- [x] 7.1 Package.json scripts (`dev`, `build`, `lint`, `format`, `migrate`, `db:dev:up/down`)
+- [x] 7.1 Package.json scripts (`dev`, `build`, `lint`, `format`, `test`)
 - [x] 7.2 Production build (`vite build` for the SPA, `esbuild` bundle for the server; `tsc --noEmit` for checking)
 - [x] 7.3 Multi-stage Dockerfile (build → runtime, node:22-alpine both stages)
 - [x] 7.4 Docker Compose (`compose.yml`, port 8080, named volumes)
@@ -84,7 +84,7 @@
 - No `compose.prod.yml` — the main `compose.yml` handles production. One file is enough.
 - Build uses `run-p type-check "build-only"` (parallel) because sequential builds are for people with more time than CPU cores.
 - Added `lint` and `format` scripts because writing clean code is a team sport even when the team is just you.
-- Added `migrate` script (`pnpm migrate --library /path/to/calibre/library`) for CLI-driven Calibre import.
+- Dropped the `migrate` script and the Calibre importer entirely (see "Why no Calibre importer?" below).
 
 ## Phase ∞: Things We Will Probably Never Do
 
@@ -108,6 +108,14 @@ PostgREST is neat. It generates a REST API from your PostgreSQL schema. It also 
 ### Why SQLite instead of PostgreSQL?
 
 Asked and answered. But in short: five tables, one user, no concurrent writes. SQLite handles this workload with the enthusiasm of a golden retriever fetching a stick. PostgreSQL handles this workload with the solemn dignity of a mainframe operator who was told there's a slight breeze in the data center.
+
+### Why no Calibre importer?
+
+Because it was 400 lines of the most brittle code in the repository — reading Calibre's internal `metadata.db` schema, deduplicating formats, copying files, plus a preview wizard in the UI — to solve a problem Calibre already solves.
+
+Calibre's *Save to disk* accepts a filename template. Set it to `{authors} - {title}` and its output lands in exactly the `Author - Title.ext` layout the scanner already understands. One line of documentation replaced an entire subsystem.
+
+Dropping it also removed the only feature that let the browser hand the server an arbitrary filesystem path to read, which is a nice property for an app with no authentication.
 
 ### Why no auth?
 

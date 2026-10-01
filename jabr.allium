@@ -3,7 +3,7 @@
 
 -- Scope: JABR self-hosted e-book reader
 -- Includes: Book library management, reading with progress tracking,
---           reader profiles, Calibre onboarding, settings configuration
+--           reader profiles, folder/file import
 -- Excludes:
 --   - Authentication/authorisation (out of scope by decision: JABR runs on a
 --     trusted internal network and is never exposed to the internet; reader
@@ -52,18 +52,6 @@ entity ReadingProgress {
     location_offset: Integer? -- character offset when format = text
     percent: Real             -- 0.0 to 100.0
     updated_at: Timestamp
-}
-
-entity AppSettings {
-    library_path: String?
-    reader_target: String?
-    calibre_migrated: Boolean
-    calibre_library_path: String?
-}
-
-external entity CalibreLibrary {
-    path: String
-    metadata_db_exists: Boolean
 }
 
 
@@ -136,43 +124,6 @@ rule RestoreReadingProgress {
     ensures: previous ReadingProgress for active_profile + book is loaded
         when it exists
     ensures: reader sees book content at last saved position
-}
-
-rule MigrateFromCalibre {
-    when: ReaderMigratesCalibre(viewer, calibre_path, options)
-
-    requires: CalibreLibrary exists at calibre_path
-    requires: CalibreLibrary.metadata_db_exists at calibre_path/metadata.db
-
-    let books = read from CalibreLibrary.metadata_db
-    let filtered = filter_by_preferred_format(books, options.prefer_format)
-
-    ensures:
-        for calibre_book in filtered:
-            if calibre_book.file not already in books directory:
-                Book.created(
-                    title: calibre_book.title,
-                    author: calibre_book.author,
-                    format: calibre_book.format,
-                    size: calibre_book.size,
-                    path: "{calibre_book.author} - {calibre_book.title}.{ext}"
-                )
-
-    ensures: AppSettings.calibre_migrated = true
-    ensures: AppSettings.calibre_library_path = calibre_path
-
-    @guidance
-        -- Calibre's metadata.db is read directly via SQLite.
-        -- Duplicate filenames (same Author - Title.ext) are silently skipped.
-        -- The migration is additive: running it multiple times is safe.
-}
-
-rule UpdateSettings {
-    when: ReaderUpdatesSettings(viewer, changes)
-
-    ensures:
-        for (key, value) in changes:
-            AppSettings.key = value
 }
 
 rule SelectActiveProfile {
@@ -249,45 +200,19 @@ surface SettingsDashboard {
         ViewSettings()
 
     exposes:
-        AppSettings values
         Profile list
         active_profile
 
     provides:
-        UpdateSettings(changes)
-        MigrateFromCalibre(path, options)
+        CreateProfile(name)
+        SelectActiveProfile(profile_id)
+        ExportBackup()
         ResetDatabase()
+            -- Clears profiles, progress and the book index; book files stay
 
     related:
         LibraryDashboard()
 }
-
-surface CalibreMigrationWizard {
-    facing viewer: Reader
-
-    context calibre_path: String
-
-    provides:
-        PreviewMigration(calibre_path, options)
-            -- Runs a dry-run: shows what would be imported without copying
-
-    provides:
-        RunMigration(calibre_path, options)
-            -- Copies books from Calibre library into books directory
-
-    exposes:
-        migration_result:
-            total books found
-            would_be_copied | copied
-            would_be_skipped | skipped
-            errors
-        each book's:
-            title, author, format, action (copy | skip | error), reason
-
-    related:
-        SettingsDashboard() when migration completes or is cancelled
-}
-
 
 -- ============================================================
 -- Invariants

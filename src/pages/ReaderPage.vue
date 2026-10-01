@@ -33,6 +33,13 @@ onMounted(async () => {
     ),
   )
 
+  // Opening the reader directly (deep link, bookmark, reload) never runs
+  // LibraryPage, so the profile list would be empty and no reading progress
+  // could be loaded or saved. Load it here too.
+  if (profilesStore.profiles.length === 0) {
+    await profilesStore.fetchProfiles()
+  }
+
   if (!result) {
     error.value = 'Book not found'
     loading.value = false

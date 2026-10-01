@@ -1,18 +1,15 @@
 /**
- * Tests for server/db.ts — covers Profile, BookProgress, Settings, BookIndex operations.
+ * Tests for server/db.ts — covers Profile, BookProgress and BookIndex operations.
  *
  * Spec obligations covered:
  *   - CreateProfile rule
  *   - RecordReadingProgress rule
- *   - UpdateSettings rule
  *   - invariant ProgressBelongsToKnownProfile
  *   - invariant NoDuplicateBookPaths
  */
 import { describe, it, expect, beforeEach } from 'vitest'
 import {
   getDb,
-  getSetting,
-  setSetting,
   listProfiles,
   getProfile,
   createProfile,
@@ -33,26 +30,6 @@ describe('getDb', () => {
     const db = getDb()
     const row = db.prepare('SELECT 1 as ok').get() as { ok: number }
     expect(row.ok).toBe(1)
-  })
-})
-
-// ============================================================
-// Settings — covers UpdateSettings rule
-// ============================================================
-describe('Settings', () => {
-  it('returns null for unset key', () => {
-    expect(getSetting('nonexistent')).toBeNull()
-  })
-
-  it('sets and gets a setting', () => {
-    setSetting('libraryPath', '/tmp/books')
-    expect(getSetting('libraryPath')).toBe('/tmp/books')
-  })
-
-  it('overwrites an existing setting', () => {
-    setSetting('username', 'alice')
-    setSetting('username', 'bob')
-    expect(getSetting('username')).toBe('bob')
   })
 })
 
@@ -350,12 +327,11 @@ describe('BookIndex', () => {
 })
 
 // ============================================================
-// Reset — covers SettingsDashboard.ResetDatabase provides
+// Reset — covers the admin reset endpoint's database operation
 // ============================================================
 describe('resetDatabase', () => {
   it('clears all data', () => {
     createProfile('User')
-    setSetting('key', 'value')
     upsertBookIndex({
       id: 'test.epub',
       path: 'test.epub',
@@ -370,7 +346,6 @@ describe('resetDatabase', () => {
     resetDatabase()
 
     expect(listProfiles()).toHaveLength(0)
-    expect(getSetting('key')).toBeNull()
     expect(listBookIndex()).toHaveLength(0)
   })
 })

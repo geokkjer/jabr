@@ -121,22 +121,19 @@ All endpoints live under `/api`. Every response is JSON unless it's a book file,
 | `GET` | `/api/progress/:bookId?profileId=` | Get reading progress for a book+profile combo |
 | `GET` | `/api/progress?profileId=` | Recent progress for a profile ("currently reading") |
 | `PUT` | `/api/progress/:bookId` | Save reading progress (upserts, because race conditions are for other people) |
-| `GET` | `/api/settings` | Get all settings |
-| `POST` | `/api/settings` | Save one or more settings |
-| `DELETE` | `/api/settings` | Reset the database (irreversible — yes, we warned you) |
-| `GET` | `/api/settings/export` | Download a JSON backup of profiles, progress, and settings |
-| `POST` | `/api/settings/migrate` | Import from a Calibre library |
+| `GET` | `/api/admin/export` | Download a JSON backup of profiles and reading progress |
+| `DELETE` | `/api/admin/data` | Reset the database (irreversible — yes, we warned you) |
 
-## Calibre Migration
+## Getting books in
 
-Two paths, same destination:
+Two paths, same directory:
 
-1. **CLI**: `pnpm migrate --library /path/to/calibre/library`
-2. **Settings page**: the "Migrate from Calibre" wizard with preview-then-execute flow
+1. **Folder**: drop `.epub`, `.pdf`, `.txt` or `.md` files into the books directory (`JABR_BOOKS_PATH`, `/app/books` in the container). Subfolders are scanned recursively.
+2. **Upload**: use *Upload* on the Library page — one file or a whole folder, straight from the browser.
 
-Both copy files from Calibre's directory structure into `books/` using `Author - Title.ext` naming. It's additive — run it against multiple libraries all you want. Identical filenames are silently skipped because we trust your original Calibre library has the canonical copies.
+Title and author are parsed from the filename as `Author - Title.ext`. Files that do not match show up under *Unknown*: readable, just not sorted the way you would like.
 
-The migration script reads Calibre's `metadata.db` (SQLite) directly and copies the actual book files. Calibre itself is never invoked. No subprocesses, no XML parsing, no prayers.
+**Coming from Calibre?** Use *Save to disk* with the template `{authors} - {title}` and point it at your books directory. That produces exactly the naming convention above, which is why there is no Calibre importer in this codebase any more — an entire subsystem, its brittle `metadata.db` scraping and its wizard UI, deleted in favour of "files go in a folder".
 
 ## Development
 
@@ -180,25 +177,24 @@ Nothing is wrong with the project when this happens — `tsx watch` and `vite` s
 jabr/
 ├── server/          # Express API (TypeScript, bundled by esbuild)
 │   ├── index.ts     # App wiring and server entry
-│   ├── routes/      # health, books, profiles, progress, settings
+│   ├── routes/      # health, books, profiles, progress, admin
 │   ├── db.ts        # SQLite init, queries, everything data
 │   ├── config.ts    # Constants, env vars, path resolvers
 │   ├── scanner.ts   # Filesystem scanning + book indexing
-│   ├── migrate.ts   # Calibre migration logic
 │   └── __tests__/   # node-env vitest suites (see vitest.server.config.ts)
 ├── src/             # Vue SPA (`.vue` SFCs, compiled with vue-tsc + vite)
 │   ├── main.ts      # Vue entry point
 │   ├── App.vue      # Root component
 │   ├── router/      # Vue Router config (library, reader, settings)
-│   ├── stores/      # Pinia setup stores: books, profiles, progress, settings
+│   ├── stores/      # Pinia setup stores: books, profiles, progress, admin
 │   ├── services/    # Effect-TS HTTP client + typed API services
 │   ├── components/  # BookCard, SearchBar, BookReader + readers/{Epub,Pdf,Text}
 │   ├── pages/       # Library, Reader, Settings
 │   ├── styles/      # Tailwind CSS 4 + custom theme
 │   ├── types/       # TypeScript interfaces
 │   └── __tests__/   # jsdom vitest suites (stores, invariants, format)
-├── scripts/         # CLI helpers (migrate-calibre.ts)
 ├── jabr.allium      # Behavioural specification the tests are derived from
+├── deploy/k8s/      # Kubernetes manifests (see deploy/k8s/README.md)
 ├── compose.yml      # Podman/Docker Compose for production
 ├── Dockerfile       # Multi-stage build
 ├── nginx.conf       # For the compose.prod.yml (if you go that route)
@@ -242,11 +238,11 @@ What the app *does* handle on its own, because it costs nothing:
 - Text/markdown is rendered in a sandboxed iframe.
 - All SQL is parameterised.
 
-Known rough edges if you ever *do* put this behind an authenticating proxy: `DELETE /api/settings` resets the database with dynamic table names (whitelisted in code, but refactor before trusting it), and `GET /api/settings/export` returns the full backup — so gate state-modifying endpoints at the proxy.
+Known rough edges if you ever *do* put this behind an authenticating proxy: `DELETE /api/admin/data` resets the database with dynamic table names (whitelisted in code, but refactor before trusting it), and `GET /api/admin/export` returns a full backup of profiles and progress — so gate state-modifying endpoints at the proxy.
 
 ## Why not PostgreSQL?
 
-Because this app has exactly five tables and zero relationships worth indexing across a network socket. SQLite is a single file, needs no daemon, survives `podman compose down` without a `pg_dump` ritual, and handles the workload of one human reading one book at a time without breaking a sweat.
+Because this app has exactly three tables and zero relationships worth indexing across a network socket. SQLite is a single file, needs no daemon, survives `podman compose down` without a `pg_dump` ritual, and handles the workload of one human reading one book at a time without breaking a sweat.
 
 The original version (yes, there was a previous version) used PostgreSQL + PostgREST. It worked. It was also complete overkill — like using a cargo ship to cross a pond. We drained the pond and built a bridge instead.
 

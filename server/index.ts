@@ -13,7 +13,7 @@ import { getDb, closeDb } from './db.js'
 import { healthRouter } from './routes/health.js'
 import { profilesRouter } from './routes/profiles.js'
 import { progressRouter } from './routes/progress.js'
-import { settingsRouter } from './routes/settings.js'
+import { adminRouter } from './routes/admin.js'
 import { booksRouter, bookFileRouter } from './routes/books.js'
 
 const app = express()
@@ -31,7 +31,7 @@ app.use('/api/books', booksRouter)
 app.use('/api/book', bookFileRouter)
 app.use('/api/profiles', profilesRouter)
 app.use('/api/progress', progressRouter)
-app.use('/api/settings', settingsRouter)
+app.use('/api/admin', adminRouter)
 
 // Serve static files in production
 if (NODE_ENV === 'production') {
